@@ -1,17 +1,25 @@
-import asyncio
 import os
+from contextlib import asynccontextmanager
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from prisma import Prisma
 import httpx
-import tweepy
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="TalentScout X API", version="1.0.0")
+# Initialize clients
+prisma = Prisma()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await prisma.connect()
+    yield
+    await prisma.disconnect()
+
+app = FastAPI(title="TalentScout X API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,7 +54,10 @@ class TwitterClient:
         if not self.bearer_token:
             raise ValueError("TWITTER_BEARER_TOKEN not found in environment")
 
-        self.client = tweepy.Client(bearer_token=self.bearer_token, wait_on_rate_limit=True)
+        self.headers = {
+            "Authorization": f"Bearer {self.bearer_token}",
+            "Content-Type": "application/json"
+        }
 
     async def search_users(self, keywords: List[str], max_results: int = 100) -> List[dict]:
         try:
@@ -54,31 +65,44 @@ class TwitterClient:
             query = " OR ".join([f'"{keyword}"' for keyword in keywords])
             query += " -is:retweet lang:en"
 
-            # Search for tweets and get users
-            tweets = self.client.search_recent_tweets(
-                query=query,
-                max_results=max_results,
-                expansions=["author_id"],
-                user_fields=["public_metrics", "description", "profile_image_url", "name", "username"]
-            )
+            async with httpx.AsyncClient() as client:
+                # Search for tweets and get users
+                params = {
+                    "query": query,
+                    "max_results": min(max_results, 100),  # Twitter API limit
+                    "expansions": "author_id",
+                    "user.fields": "public_metrics,description,profile_image_url,name,username"
+                }
 
-            if not tweets.data or not tweets.includes:
-                return []
+                response = await client.get(
+                    "https://api.twitter.com/2/tweets/search/recent",
+                    headers=self.headers,
+                    params=params
+                )
 
-            # Extract unique users
-            users_dict = {}
-            for user in tweets.includes.get("users", []):
-                if user.username not in users_dict:
-                    users_dict[user.username] = {
-                        "id": user.id,
-                        "username": user.username,
-                        "name": user.name or user.username,
-                        "description": user.description or "",
-                        "followers_count": user.public_metrics.get("followers_count", 0),
-                        "profile_image_url": user.profile_image_url or "",
-                    }
+                if response.status_code != 200:
+                    print(f"Twitter API error: {response.status_code} - {response.text}")
+                    return []
 
-            return list(users_dict.values())
+                data = response.json()
+
+                if not data.get("data") or not data.get("includes", {}).get("users"):
+                    return []
+
+                # Extract unique users
+                users_dict = {}
+                for user in data["includes"]["users"]:
+                    if user["username"] not in users_dict:
+                        users_dict[user["username"]] = {
+                            "id": user["id"],
+                            "username": user["username"],
+                            "name": user.get("name", user["username"]),
+                            "description": user.get("description", ""),
+                            "followers_count": user.get("public_metrics", {}).get("followers_count", 0),
+                            "profile_image_url": user.get("profile_image_url", ""),
+                        }
+
+                return list(users_dict.values())
 
         except Exception as e:
             print(f"Twitter API error: {e}")
@@ -86,15 +110,27 @@ class TwitterClient:
 
     async def get_recent_tweet(self, user_id: str) -> str:
         try:
-            tweets = self.client.get_users_tweets(
-                id=user_id,
-                max_results=5,
-                exclude=["retweets", "replies"]
-            )
+            async with httpx.AsyncClient() as client:
+                params = {
+                    "max_results": 5,
+                    "exclude": "retweets,replies"
+                }
 
-            if tweets.data:
-                return tweets.data[0].text[:200] + "..." if len(tweets.data[0].text) > 200 else tweets.data[0].text
-            return "No recent tweets"
+                response = await client.get(
+                    f"https://api.twitter.com/2/users/{user_id}/tweets",
+                    headers=self.headers,
+                    params=params
+                )
+
+                if response.status_code != 200:
+                    return "No recent tweets"
+
+                data = response.json()
+                if data.get("data") and len(data["data"]) > 0:
+                    tweet_text = data["data"][0]["text"]
+                    return tweet_text[:200] + "..." if len(tweet_text) > 200 else tweet_text
+
+                return "No recent tweets"
 
         except Exception as e:
             print(f"Error getting tweets for user {user_id}: {e}")
@@ -168,15 +204,6 @@ Return ONLY a JSON object with:
 # Initialize clients
 twitter_client = TwitterClient()
 grok_client = GrokClient()
-prisma = Prisma()
-
-@app.on_event("startup")
-async def startup():
-    await prisma.connect()
-
-@app.on_event("shutdown")
-async def shutdown():
-    await prisma.disconnect()
 
 @app.post("/scout", response_model=List[CandidateResponse])
 async def scout_talent(request: ScoutRequest):
