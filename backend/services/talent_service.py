@@ -14,10 +14,11 @@ class TalentService:
     async def scout_talent(self, request: ScoutRequest) -> List[CandidateResponse]:
         """Main talent scouting function"""
 
-        # 1. Search Twitter for users
+        # 1. Search Twitter for users with enhanced query and pre-filtering
         print(f"Searching for candidates with keywords: {request.keywords}")
         users = await self.twitter_service.search_users(
             request.keywords,
+            job_title=request.job_title,
             max_results=100
         )
 

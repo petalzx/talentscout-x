@@ -10,22 +10,48 @@ class GrokService:
 
     async def score_candidate(self, job_title: str, user: TwitterUser) -> GrokScoringResult:
         try:
-            prompt = f"""Rate this person from 1-100 for the job "{job_title}".
+            prompt = f"""You are an expert technical recruiter evaluating a candidate for: "{job_title}"
 
-Profile:
-- Name: {user.name}
-- Bio: {user.description}
-- Followers: {user.followers_count}
-- Recent tweet: {user.recent_tweet}
+CANDIDATE PROFILE:
+Name: {user.name}
+Bio: {user.description}
+Followers: {user.followers_count}
+Recent Tweet: {user.recent_tweet}
 
-Consider:
-- How well their bio matches the job requirements
-- Their professional experience indicators
-- Their social media presence and engagement
-- Their technical skills mentioned
+EVALUATION CRITERIA:
+1. Technical Skills Match (0-40 points):
+   - Does bio explicitly mention relevant technologies for {job_title}?
+   - Are there specific technical skills listed (languages, frameworks, tools)?
+   - Quality over quantity - relevant skills score higher
 
-Return ONLY a JSON object with:
-{{"score": number_1_to_100, "reasoning": "brief_explanation"}}"""
+2. Professional Experience (0-30 points):
+   - Does bio indicate professional developer/engineer role?
+   - Any seniority indicators (senior, lead, staff, principal)?
+   - Years of experience mentioned?
+   - Company names or notable projects?
+
+3. Profile Quality (0-15 points):
+   - Complete, professional bio (not generic/casual)?
+   - Links to GitHub, portfolio, website?
+   - Active account with recent technical content?
+
+4. Relevance to Role (0-15 points):
+   - Is this person actually doing the type of work needed?
+   - Do recent tweets show technical discussions/work?
+   - Would they realistically be interested in this role?
+
+SCORING GUIDELINES:
+- 80-100: Perfect match - explicitly qualified senior professional
+- 60-79: Strong match - clearly qualified with relevant experience
+- 40-59: Moderate match - some qualifications but gaps
+- 20-39: Weak match - minimal qualifications or unclear fit
+- 0-19: Poor match - no clear qualifications or wrong field
+
+BE STRICT: Most candidates should score 20-50. Only exceptional matches score above 70.
+Penalize heavily for: non-English bios, no tech keywords, generic bios, irrelevant content.
+
+Return ONLY valid JSON:
+{{"score": <0-100>, "reasoning": "<concise explanation of score>"}}"""
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
