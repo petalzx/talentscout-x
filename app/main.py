@@ -7,8 +7,10 @@ from .routers.scout import router as scout_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    from .db.database import prisma
+    await prisma.connect()
     yield
+    await prisma.disconnect()
 
 app = FastAPI(
     title=settings.project_name,

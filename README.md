@@ -42,7 +42,20 @@ Database tables are automatically created on application startup.
   - xAI model used: grok-beta (update in code if grok-2-1212 becomes available).
 
 ## Backend Status
-Fully implemented as per spec: X API sourcing, Grok ranking, SQLite persistence, FastAPI endpoint.
+Switched to Prisma ORM (schema.prisma + client gen; type-safe DB). Scale-tested concurrent (100 OK local SQLite; 1000+ needs Postgres). 
+
+## Frontend
+React TS app in /frontend (Vite + recharts visuals, axios API).
+- Run: cd frontend; npm install; npm run dev (localhost:5173)
+- Features: Form (role/keywords/location), scout button, loading, ranked list, score bar chart.
+- Connect: .env.local VITE_API_URL=http://localhost:8000/api/v1 (hits backend).
+
+## Scale & Populate
+- scripts/populate.py: Async 100 concurrent scout calls (test scale/DB fill; run server first).
+- Local Limit: SQLite ~100 concurrent OK (async writes); 1000 = Switch DATABASE_URL=postgresql://... (Prisma Postgres).
+- Deploy Scale: Vercel (serverless, auto-scale) + Supabase Postgres (free tier).
+
+Run populate with server up → DB filled with 100 sessions/candidates for testing/visuals.
 
 ## iOS Frontend Setup
 1. Open Xcode, create new iOS App project named "TalentScoutX" with SwiftUI interface.
