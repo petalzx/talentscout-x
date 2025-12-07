@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronRight, ChevronDown, ChevronUp, ArrowRight, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 import axios from 'axios';
@@ -30,11 +30,9 @@ interface PipelineData {
   };
 }
 
-// Function to randomly distribute candidates across pipeline stages
+// Function to organize candidates by their actual pipeline stages from the database
+// Only includes candidates who have been moved to Qualified or beyond (excludes "Discovered")
 const distributeCandidates = (candidates: any[]): PipelineData => {
-  const stages = ['Qualified', 'Screening', 'Round 1', 'Round 2', 'Final', 'Offer', 'Rejected'];
-  const stageWeights = [0.4, 0.25, 0.15, 0.1, 0.05, 0.03, 0.02]; // Higher weight for earlier stages
-
   const result: PipelineData = {
     all: {
       Qualified: [],
@@ -91,30 +89,24 @@ const distributeCandidates = (candidates: any[]): PipelineData => {
     avatar: candidate.avatar,
     role: candidate.roles?.[0] || 'Developer',
     match: candidate.match,
+    pipeline_stage: candidate.pipeline_stage,
   }));
 
-  // Distribute all candidates randomly
+  // Organize candidates by their actual pipeline stage from the database
+  // Only include candidates in "Qualified" or later stages (skip "Discovered")
   transformedCandidates.forEach(candidate => {
-    // Choose random stage based on weights
-    const random = Math.random();
-    let cumulative = 0;
-    let chosenStage = 'Qualified';
+    const stage = candidate.pipeline_stage;
 
-    for (let i = 0; i < stages.length; i++) {
-      cumulative += stageWeights[i];
-      if (random <= cumulative) {
-        chosenStage = stages[i];
-        break;
+    // Only add candidates who are in Qualified or beyond (skip null and "Discovered")
+    if (stage && stage !== 'Discovered' && result.all[stage as keyof typeof result.all]) {
+      // Add to all category
+      result.all[stage as keyof typeof result.all].push(candidate);
+
+      // Add to role-specific category
+      const roleKey = candidate.role;
+      if (result[roleKey]) {
+        result[roleKey][stage as keyof typeof result[roleKey]].push(candidate);
       }
-    }
-
-    // Add to all category
-    result.all[chosenStage as keyof typeof result.all].push(candidate);
-
-    // Add to role-specific category
-    const roleKey = candidate.role;
-    if (result[roleKey]) {
-      result[roleKey][chosenStage as keyof typeof result[roleKey]].push(candidate);
     }
   });
 

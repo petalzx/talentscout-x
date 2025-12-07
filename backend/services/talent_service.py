@@ -54,8 +54,10 @@ class TalentService:
         for user, scoring_result in zip(limited_users, scoring_results):
             print(f"Saving candidate: {user.username} (score: {scoring_result.score})")
 
-            # Auto-set pipeline stage to "Qualified" if score >= 75%
-            auto_pipeline_stage = "Qualified" if scoring_result.score >= 75 else None
+            # Set pipeline stage based on match score
+            # >= 75%: Qualified (strong match)
+            # < 75%: Discovered (needs review)
+            initial_pipeline_stage = "Qualified" if scoring_result.score >= 75 else "Discovered"
 
             # Save candidate to database
             candidate = await self.prisma.candidate.upsert(
@@ -71,7 +73,7 @@ class TalentService:
                         "avatar": user.profile_image_url,
                         "headerImage": user.profile_banner_url or None,
                         "recentTweet": user.recent_tweet,
-                        "pipelineStage": auto_pipeline_stage
+                        "pipelineStage": initial_pipeline_stage
                     },
                     "update": {
                         "twitterId": user.id,
@@ -143,7 +145,8 @@ class TalentService:
                 match=result["score"],
                 tags=found_skills[:4] if found_skills else ["Developer"],
                 recent_post=candidate.recentTweet or "No recent posts",
-                roles=[request.job_title]
+                roles=[request.job_title],
+                pipeline_stage=candidate.pipelineStage
             ))
 
         return response_data
@@ -194,7 +197,8 @@ class TalentService:
                 match=result["score"],
                 tags=found_skills[:4] if found_skills else ["Developer"],
                 recent_post=candidate.recentTweet or "No recent posts",
-                roles=[result["job_title"]]
+                roles=[result["job_title"]],
+                pipeline_stage=candidate.pipelineStage
             ))
 
         # Sort by score and return

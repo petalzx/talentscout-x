@@ -19,6 +19,7 @@ class CandidateResponse(BaseModel):
     recent_post: str
     engagement: str = "0 replies · 0 likes"
     roles: List[str]
+    pipeline_stage: Optional[str] = None
 
 class TwitterUser(BaseModel):
     id: str
