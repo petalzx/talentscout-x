@@ -4,7 +4,7 @@ from prisma import Prisma
 from .twitter_service import TwitterService
 from .grok_service import GrokService
 from ..config.settings import settings
-from ..models.schemas import ScoutRequest, CandidateResponse, DetailedCandidateResponse, TweetResponse
+from ..models.schemas import ScoutRequest, CandidateResponse, DetailedCandidateResponse, TweetResponse, NotificationRequest, NotificationResponse
 
 class TalentService:
     def __init__(self):
@@ -320,3 +320,76 @@ class TalentService:
         except Exception as e:
             print(f"Error updating pipeline stage: {e}")
             return False
+
+    async def create_notification(self, request: NotificationRequest) -> Optional[NotificationResponse]:
+        """Create a notification for a candidate"""
+        try:
+            # Get candidate info
+            candidate = await self.prisma.candidate.find_unique(
+                where={"id": request.candidate_id}
+            )
+
+            if not candidate:
+                return None
+
+            # Create notification
+            notification = await self.prisma.notification.create({
+                "candidateId": request.candidate_id,
+                "message": request.message,
+                "eventType": request.event_type,
+                "fromStage": request.from_stage,
+                "toStage": request.to_stage,
+                "isAIGenerated": request.is_ai_generated
+            })
+
+            return NotificationResponse(
+                id=notification.id,
+                candidate_id=notification.candidateId,
+                candidate_name=candidate.name or candidate.handle,
+                message=notification.message,
+                event_type=notification.eventType,
+                from_stage=notification.fromStage,
+                to_stage=notification.toStage,
+                is_ai_generated=notification.isAIGenerated,
+                sent_at=notification.sentAt.isoformat()
+            )
+
+        except Exception as e:
+            print(f"Error creating notification: {e}")
+            return None
+
+    async def get_candidate_notifications(self, candidate_id: int) -> List[NotificationResponse]:
+        """Get all notifications for a candidate"""
+        try:
+            # Get candidate info
+            candidate = await self.prisma.candidate.find_unique(
+                where={"id": candidate_id}
+            )
+
+            if not candidate:
+                return []
+
+            # Get notifications
+            notifications = await self.prisma.notification.find_many(
+                where={"candidateId": candidate_id},
+                order=[{"sentAt": "desc"}]
+            )
+
+            return [
+                NotificationResponse(
+                    id=n.id,
+                    candidate_id=n.candidateId,
+                    candidate_name=candidate.name or candidate.handle,
+                    message=n.message,
+                    event_type=n.eventType,
+                    from_stage=n.fromStage,
+                    to_stage=n.toStage,
+                    is_ai_generated=n.isAIGenerated,
+                    sent_at=n.sentAt.isoformat()
+                )
+                for n in notifications
+            ]
+
+        except Exception as e:
+            print(f"Error getting notifications: {e}")
+            return []

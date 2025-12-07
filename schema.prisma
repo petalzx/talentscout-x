@@ -22,6 +22,7 @@ model Candidate {
   createdAt      DateTime @default(now())
   searches       SearchResult[]
   tweets         Tweet[]
+  notifications  Notification[]
 
   @@map("Candidate")
 }
@@ -60,4 +61,18 @@ model Tweet {
   candidate   Candidate @relation(fields: [candidateId], references: [id])
 
   @@map("Tweet")
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  candidateId Int
+  message     String   // The notification message
+  eventType   String   // "stage_advance", "stage_reject", etc.
+  fromStage   String?  // Previous stage
+  toStage     String?  // New stage
+  isAIGenerated Boolean @default(false) // Whether the message was AI-generated
+  sentAt      DateTime @default(now())
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("Notification")
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Mail, MessageCircle, Star, TrendingUp, ExternalLink, ThumbsUp, ArrowRight, X } from 'lucide-react';
+import { ArrowLeft, Calendar, Mail, MessageCircle, Star, TrendingUp, ExternalLink, ThumbsUp, ArrowRight, X, Send, Sparkles } from 'lucide-react';
 import { ScheduleModal } from './ScheduleModal';
 import axios from 'axios';
 
@@ -48,6 +48,9 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [confirmationType, setConfirmationType] = useState<'advance' | 'reject'>('advance');
   const [nextStage, setNextStage] = useState<string>('');
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState('');
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -85,12 +88,27 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
   };
 
   // Confirm action
-  const confirmAction = async () => {
+  const confirmAction = () => {
+    // Show notification modal after confirming advance
+    if (confirmationType === 'advance') {
+      setShowNotificationModal(true);
+      setShowConfirmation(false);
+    } else {
+      // For reject, just update without notification
+      handleRejectWithoutNotification();
+    }
+  };
+
+  // Cancel action
+  const cancelAction = () => {
+    setShowConfirmation(false);
+  };
+
+  const handleRejectWithoutNotification = async () => {
     const oldStage = pipelineStage;
     setPipelineStage(nextStage);
     setShowConfirmation(false);
 
-    // Update backend
     try {
       await axios.put(`${API_BASE}/candidates/${candidateId}/pipeline`, {
         candidate_id: parseInt(candidateId),
@@ -98,14 +116,80 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
       });
     } catch (err) {
       console.error('Failed to update pipeline stage:', err);
-      // Revert on error
       setPipelineStage(oldStage);
     }
   };
 
-  // Cancel action
-  const cancelAction = () => {
-    setShowConfirmation(false);
+  const handleGenerateAIMessage = async () => {
+    setIsGeneratingAI(true);
+
+    // Simulate AI generation
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const messages: Record<string, string> = {
+      Qualified: `Hi ${profile?.name}! Great news - your profile caught our attention and we'd like to learn more about you.\n\nBased on your background in ${profile?.tags?.[0] || 'technology'}, we think you'd be a great fit for our ${profile?.roles?.[0] || 'engineering'} role. Would you be interested in exploring this opportunity?`,
+      Screening: `Hi ${profile?.name}! We're impressed by your background and would love to move forward.\n\nWe'd like to schedule a brief screening call to learn more about your experience and discuss the role. Are you available for a 30-minute call this week?`,
+      'Round 1': `Hi ${profile?.name}! Thanks for the great conversation during our screening call. We're excited to move you forward to the next stage.\n\nI'd like to schedule a technical interview with our engineering team. This will be about 60 minutes and will focus on your technical skills and problem-solving approach.`,
+      'Round 2': `Hi ${profile?.name}! You did excellent in the first round interview. We'd like to invite you to the second round.\n\nThis will be a deeper technical discussion with our senior engineers, focusing on system design and your approach to complex problems.`,
+      Final: `Hi ${profile?.name}! We're really impressed with your performance so far. We'd like to invite you to a final round interview.\n\nThis will be with our leadership team to discuss culture fit, team dynamics, and answer any questions you have about the role and company.`,
+      Offer: `Hi ${profile?.name}! Congratulations! We're thrilled to extend you an offer to join our team.\n\nI'll be sending over the formal offer details shortly. Looking forward to hopefully having you on board!`
+    };
+
+    const message = messages[nextStage] || `Congratulations! You've been advanced to ${nextStage}.`;
+    setNotificationMessage(message);
+    setIsGeneratingAI(false);
+  };
+
+  const handleSendNotification = async () => {
+    if (!profile || !notificationMessage.trim()) {
+      alert('Please enter a message');
+      return;
+    }
+
+    try {
+      // Create notification
+      await axios.post(`${API_BASE}/notifications`, {
+        candidate_id: parseInt(candidateId),
+        message: notificationMessage,
+        event_type: 'stage_advance',
+        from_stage: pipelineStage,
+        to_stage: nextStage,
+        is_ai_generated: isGeneratingAI
+      });
+
+      // Update pipeline stage
+      await axios.put(`${API_BASE}/candidates/${candidateId}/pipeline`, {
+        candidate_id: parseInt(candidateId),
+        pipeline_stage: nextStage
+      });
+
+      console.log('Notification sent and pipeline updated!');
+
+      // Update local state
+      setPipelineStage(nextStage);
+      setShowNotificationModal(false);
+      setNotificationMessage('');
+    } catch (error) {
+      console.error('Failed to send notification:', error);
+      alert('Failed to send notification');
+    }
+  };
+
+  const handleSkipNotification = async () => {
+    try {
+      // Just update the pipeline stage without notification
+      await axios.put(`${API_BASE}/candidates/${candidateId}/pipeline`, {
+        candidate_id: parseInt(candidateId),
+        pipeline_stage: nextStage
+      });
+
+      setPipelineStage(nextStage);
+      setShowNotificationModal(false);
+      setNotificationMessage('');
+    } catch (error) {
+      console.error('Failed to update pipeline:', error);
+      alert('Failed to update pipeline');
+    }
   };
 
   const loadProfile = async () => {
@@ -449,6 +533,74 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
                 }`}
               >
                 {confirmationType === 'advance' ? 'Advance' : 'Reject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification Modal */}
+      {showNotificationModal && profile && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-lg w-full">
+            <div className="flex items-center gap-3 mb-4">
+              <img
+                src={profile.avatar}
+                alt={profile.name}
+                className="w-12 h-12 rounded-full ring-2 ring-gray-800"
+              />
+              <div className="flex-1">
+                <h3 className="font-semibold">{profile.name}</h3>
+                <p className="text-sm text-gray-400">
+                  Advancing to <span className="text-blue-400">{nextStage}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-2">Notification Message</label>
+              <textarea
+                value={notificationMessage}
+                onChange={(e) => setNotificationMessage(e.target.value)}
+                placeholder="Write a message to notify the candidate..."
+                rows={6}
+                className="w-full px-4 py-3 bg-gray-900/50 border border-gray-800 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm"
+              />
+            </div>
+
+            <div className="flex gap-3 mb-4">
+              <button
+                onClick={handleGenerateAIMessage}
+                disabled={isGeneratingAI}
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-500/20 to-purple-500/20 hover:from-blue-500/30 hover:to-purple-500/30 border border-blue-500/30 rounded-xl transition-all flex items-center justify-center gap-2 text-blue-400 text-sm disabled:opacity-50"
+              >
+                {isGeneratingAI ? (
+                  <>
+                    <Sparkles className="w-4 h-4 animate-pulse" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Generate with AI
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleSkipNotification}
+                className="px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-xl transition-colors text-sm"
+              >
+                Skip Notification
+              </button>
+              <button
+                onClick={handleSendNotification}
+                className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm font-semibold"
+              >
+                <Send className="w-4 h-4" />
+                Send & Advance
               </button>
             </div>
           </div>

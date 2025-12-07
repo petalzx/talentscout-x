@@ -43,6 +43,7 @@ interface Conversation {
   messages: Message[];
   isInternal?: boolean;
   coworkerTitle?: string;
+  isSearchResult?: boolean;
 }
 
 // Mock data for realistic conversation previews
@@ -298,6 +299,7 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messageText, setMessageText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchMode, setSearchMode] = useState<'conversations' | 'candidates' | 'username'>('conversations');
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showAssessmentModal, setShowAssessmentModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -308,6 +310,10 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   // Real candidates state
   const [realCandidateConversations, setRealCandidateConversations] = useState<Conversation[]>([]);
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(true);
+
+  // All candidates from database (for candidate search mode)
+  const [allCandidates, setAllCandidates] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Schedule meeting form
   const [meetingDate, setMeetingDate] = useState('');
@@ -324,7 +330,7 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   const [feedbackRating, setFeedbackRating] = useState(3);
   const [feedbackRecommendation, setFeedbackRecommendation] = useState('');
 
-  // Load real candidates on mount
+  // Load real candidates with notifications on mount
   useEffect(() => {
     const loadCandidates = async () => {
       setIsLoadingCandidates(true);
@@ -332,43 +338,50 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
         const response = await axios.get(`${API_BASE}/candidates`);
         const candidates = response.data;
 
-        // Select random 12 candidates and create conversations
-        const selectedCandidates = candidates
-          .sort(() => 0.5 - Math.random())
-          .slice(0, 12);
+        // Store all candidates for search
+        setAllCandidates(candidates);
 
-        const conversations: Conversation[] = selectedCandidates.map((candidate: any, index: number) => ({
-          id: candidate.id,
-          name: candidate.name,
-          handle: candidate.handle,
-          avatar: candidate.avatar,
-          role: candidate.roles?.[0] || 'Developer',
-          lastMessage: mockLastMessages[index % mockLastMessages.length],
-          timestamp: mockTimestamps[index % mockTimestamps.length],
-          unread: Math.random() > 0.7, // 30% chance unread
-          messages: [
-            {
-              id: '1',
+        // Load conversations only for candidates who have notifications
+        const conversationsPromises = candidates.map(async (candidate: any) => {
+          try {
+            const notifResponse = await axios.get(`${API_BASE}/candidates/${candidate.id}/notifications`);
+            const notifications = notifResponse.data;
+
+            if (notifications.length === 0) return null; // Skip candidates with no notifications
+
+            // Convert notifications to messages
+            const messages: Message[] = notifications.map((notif: any, idx: number) => ({
+              id: `notif-${notif.id}`,
               senderId: 'recruiter',
-              text: `Hi ${candidate.name.split(' ')[0]}! I came across your profile and was impressed by your background. We have a ${candidate.roles?.[0] || 'Developer'} role that I think would be a great fit for you.`,
-              timestamp: mockTimestamps[(index + 1) % mockTimestamps.length],
-              type: 'text',
-            },
-            {
-              id: '2',
-              senderId: candidate.id,
-              text: mockLastMessages[index % mockLastMessages.length],
-              timestamp: mockTimestamps[index % mockTimestamps.length],
-              type: 'text',
-            },
-          ],
-        }));
+              text: notif.message,
+              timestamp: formatNotificationTime(notif.sent_at),
+              type: 'text' as const,
+            }));
 
-        setRealCandidateConversations(conversations);
+            const lastNotif = notifications[0];
+            return {
+              id: candidate.id,
+              name: candidate.name,
+              handle: candidate.handle,
+              avatar: candidate.avatar,
+              role: candidate.roles?.[0] || 'Developer',
+              lastMessage: lastNotif.message.substring(0, 60) + '...',
+              timestamp: formatNotificationTime(lastNotif.sent_at),
+              unread: false,
+              messages: messages.reverse(), // Show oldest first
+            };
+          } catch (err) {
+            return null; // Skip candidates with notification fetch errors
+          }
+        });
+
+        const allConversations = await Promise.all(conversationsPromises);
+        const validConversations = allConversations.filter(conv => conv !== null) as Conversation[];
+
+        setRealCandidateConversations(validConversations);
       } catch (error) {
         console.error('Failed to load candidates:', error);
-        // Fallback to mock data
-        setRealCandidateConversations(candidateConversations);
+        setRealCandidateConversations([]);
       } finally {
         setIsLoadingCandidates(false);
       }
@@ -377,19 +390,57 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
     loadCandidates();
   }, []);
 
+  const formatNotificationTime = (isoString: string) => {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return `${Math.floor(diffDays / 7)}w ago`;
+  };
+
   // Auto-open conversation when navigating from profile
   useEffect(() => {
     const openOrCreateConversation = async () => {
-      if (!openConversationId || isLoadingCandidates) return;
+      if (!openConversationId) return;
 
-      // First check if conversation already exists
-      let conversation = realCandidateConversations.find((conv) => conv.id === openConversationId);
+      // Wait for candidates to finish loading
+      if (isLoadingCandidates) return;
 
-      // If not, fetch the candidate and create a new conversation
+      console.log('Opening conversation for candidate ID:', openConversationId);
+
+      // First check if conversation already exists (compare as strings since IDs come as strings from props)
+      let conversation = realCandidateConversations.find((conv) => String(conv.id) === String(openConversationId));
+
+      // If not, fetch the candidate and their notifications to create a new conversation
       if (!conversation) {
+        console.log('Conversation not found, creating new one...');
+        console.log('Fetching candidate with ID:', openConversationId);
         try {
           const response = await axios.get(`${API_BASE}/candidates/${openConversationId}`);
           const candidate = response.data;
+          console.log('Fetched candidate:', candidate);
+
+          // Fetch notifications for this candidate
+          const notifResponse = await axios.get(`${API_BASE}/candidates/${openConversationId}/notifications`);
+          const notifications = notifResponse.data;
+          console.log('Fetched notifications:', notifications.length);
+
+          // Convert notifications to messages
+          const messages: Message[] = notifications.length > 0
+            ? notifications.map((notif: any) => ({
+                id: `notif-${notif.id}`,
+                senderId: 'recruiter',
+                text: notif.message,
+                timestamp: formatNotificationTime(notif.sent_at),
+                type: 'text' as const,
+              })).reverse() // Show oldest first
+            : []; // Empty if no notifications yet
 
           // Create new conversation object
           conversation = {
@@ -398,35 +449,75 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
             handle: candidate.handle,
             avatar: candidate.avatar,
             role: candidate.roles?.[0] || 'Developer',
-            lastMessage: '',
-            timestamp: 'Just now',
+            lastMessage: notifications.length > 0 ? notifications[0].message.substring(0, 60) + '...' : 'Start a conversation',
+            timestamp: notifications.length > 0 ? formatNotificationTime(notifications[0].sent_at) : 'Now',
             unread: false,
-            messages: [
-              {
-                id: '1',
-                senderId: 'recruiter',
-                text: `Hi ${candidate.name.split(' ')[0]}! I came across your profile and was impressed by your background. I'd love to discuss potential opportunities with you.`,
-                timestamp: 'Just now',
-                type: 'text',
-              }
-            ],
+            messages: messages,
           };
 
-          // Add to conversations list
-          setRealCandidateConversations((prev) => [conversation!, ...prev]);
-        } catch (error) {
+          // Add to conversations list if not already there
+          setRealCandidateConversations((prev: Conversation[]) => {
+            // Check if already exists (compare as strings)
+            if (prev.find(c => String(c.id) === String(conversation!.id))) {
+              return prev;
+            }
+            return [conversation!, ...prev];
+          });
+
+          console.log('Created new conversation for', candidate.name);
+        } catch (error: any) {
           console.error('Failed to fetch candidate for conversation:', error);
-          if (onConversationOpened) {
-            onConversationOpened();
+          console.error('Error details:', {
+            candidateId: openConversationId,
+            status: error.response?.status,
+            message: error.message,
+            url: error.config?.url
+          });
+
+          // If candidate not found, try to find them in the allCandidates list
+          const fallbackCandidate = allCandidates.find(c => String(c.id) === String(openConversationId));
+          if (fallbackCandidate) {
+            console.log('Found candidate in local cache, using fallback:', fallbackCandidate.name);
+            // Create conversation without fetching from API
+            conversation = {
+              id: fallbackCandidate.id,
+              name: fallbackCandidate.name,
+              handle: fallbackCandidate.handle,
+              avatar: fallbackCandidate.avatar,
+              role: fallbackCandidate.roles?.[0] || 'Developer',
+              lastMessage: 'Start a conversation',
+              timestamp: 'Now',
+              unread: false,
+              messages: [],
+            };
+
+            setRealCandidateConversations((prev: Conversation[]) => {
+              if (prev.find(c => String(c.id) === String(conversation!.id))) {
+                return prev;
+              }
+              return [conversation!, ...prev];
+            });
+          } else {
+            console.error('Candidate not found in cache either');
+            if (onConversationOpened) {
+              onConversationOpened();
+            }
+            return;
           }
-          return;
         }
+      } else {
+        console.log('Found existing conversation for', conversation.name);
       }
 
       // Open the conversation
+      console.log('Opening conversation:', conversation.name);
+      console.log('Setting selected conversation to:', conversation);
       setSelectedConversation(conversation);
       setActiveTab('candidates');
+
+      // Notify parent that conversation was opened (this clears the trigger)
       if (onConversationOpened) {
+        console.log('Calling onConversationOpened callback');
         onConversationOpened();
       }
     };
@@ -434,27 +525,262 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
     openOrCreateConversation();
   }, [openConversationId, realCandidateConversations, isLoadingCandidates, onConversationOpened]);
 
+  // Debug selected conversation changes
+  useEffect(() => {
+    console.log('Selected conversation changed:', selectedConversation?.name || 'null');
+  }, [selectedConversation]);
+
+  // Handle opening a conversation from candidate search results
+  const handleOpenCandidateConversation = async (candidateId: string) => {
+    console.log('Opening conversation for candidate from search:', candidateId);
+
+    // Check if conversation already exists
+    let conversation = realCandidateConversations.find((conv) => String(conv.id) === String(candidateId));
+
+    if (!conversation) {
+      // Create new conversation
+      try {
+        const candidate = allCandidates.find(c => String(c.id) === String(candidateId));
+        if (!candidate) {
+          console.error('Candidate not found:', candidateId);
+          return;
+        }
+
+        // Fetch notifications
+        const notifResponse = await axios.get(`${API_BASE}/candidates/${candidateId}/notifications`);
+        const notifications = notifResponse.data;
+
+        const messages: Message[] = notifications.length > 0
+          ? notifications.map((notif: any) => ({
+              id: `notif-${notif.id}`,
+              senderId: 'recruiter',
+              text: notif.message,
+              timestamp: formatNotificationTime(notif.sent_at),
+              type: 'text' as const,
+            })).reverse()
+          : [];
+
+        conversation = {
+          id: candidate.id,
+          name: candidate.name,
+          handle: candidate.handle,
+          avatar: candidate.avatar,
+          role: candidate.roles?.[0] || 'Developer',
+          lastMessage: notifications.length > 0 ? notifications[0].message.substring(0, 60) + '...' : 'Start a conversation',
+          timestamp: notifications.length > 0 ? formatNotificationTime(notifications[0].sent_at) : 'Now',
+          unread: false,
+          messages: messages,
+        };
+
+        // Add to conversations list
+        setRealCandidateConversations((prev: Conversation[]) => {
+          if (prev.find(c => String(c.id) === String(conversation!.id))) {
+            return prev;
+          }
+          return [conversation!, ...prev];
+        });
+      } catch (error) {
+        console.error('Failed to create conversation:', error);
+        return;
+      }
+    }
+
+    setSelectedConversation(conversation);
+  };
+
   const currentConversations = activeTab === 'candidates'
     ? (isLoadingCandidates ? [] : realCandidateConversations)
     : internalConversations;
 
-  const filteredConversations = currentConversations.filter((conv) =>
-    conv.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    conv.handle.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter based on search mode
+  const getFilteredResults = () => {
+    if (!searchQuery.trim()) {
+      return currentConversations;
+    }
 
-  const handleSendMessage = () => {
-    if (!messageText.trim()) return;
-    console.log('Sending message:', messageText);
-    setMessageText('');
+    const query = searchQuery.toLowerCase();
+
+    if (activeTab === 'internal') {
+      // Always search conversations for internal tab
+      return currentConversations.filter((conv) =>
+        conv.name.toLowerCase().includes(query) ||
+        conv.handle.toLowerCase().includes(query)
+      );
+    }
+
+    // For candidates tab, use search mode
+    if (searchMode === 'conversations') {
+      return currentConversations.filter((conv) =>
+        conv.name.toLowerCase().includes(query) ||
+        conv.handle.toLowerCase().includes(query)
+      );
+    } else if (searchMode === 'candidates') {
+      // Search all candidates in database
+      return allCandidates
+        .filter((cand: any) =>
+          cand.name.toLowerCase().includes(query) ||
+          cand.handle.toLowerCase().includes(query) ||
+          cand.bio?.toLowerCase().includes(query)
+        )
+        .map((cand: any) => ({
+          id: cand.id,
+          name: cand.name,
+          handle: cand.handle,
+          avatar: cand.avatar,
+          role: cand.roles?.[0] || 'Developer',
+          lastMessage: cand.bio?.substring(0, 60) + '...' || 'No bio',
+          timestamp: '',
+          unread: false,
+          messages: [],
+          isSearchResult: true,
+        }));
+    } else if (searchMode === 'username') {
+      // Search by Twitter username
+      return allCandidates
+        .filter((cand: any) =>
+          cand.handle.toLowerCase().includes(query)
+        )
+        .map((cand: any) => ({
+          id: cand.id,
+          name: cand.name,
+          handle: cand.handle,
+          avatar: cand.avatar,
+          role: cand.roles?.[0] || 'Developer',
+          lastMessage: cand.bio?.substring(0, 60) + '...' || 'No bio',
+          timestamp: '',
+          unread: false,
+          messages: [],
+          isSearchResult: true,
+        }));
+    }
+
+    return currentConversations;
   };
 
-  const handleScheduleMeeting = () => {
-    if (!meetingDate || !meetingTime) {
+  const filteredConversations = getFilteredResults();
+
+  const handleSendMessage = async () => {
+    if (!messageText.trim() || !selectedConversation) return;
+
+    const messageContent = messageText.trim();
+    console.log('Sending message:', messageContent);
+
+    // Create a temporary message ID
+    const tempMessageId = `temp-${Date.now()}`;
+    const newMessage: Message = {
+      id: tempMessageId,
+      senderId: 'recruiter',
+      text: messageContent,
+      timestamp: 'Just now',
+      type: 'text',
+    };
+
+    // Optimistically update UI
+    setSelectedConversation((prev: Conversation | null) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        messages: [...prev.messages, newMessage],
+        lastMessage: messageContent.substring(0, 60) + (messageContent.length > 60 ? '...' : ''),
+        timestamp: 'Just now',
+      };
+    });
+
+    // Update in conversations list
+    setRealCandidateConversations(prev =>
+      prev.map(conv => {
+        if (String(conv.id) === String(selectedConversation.id)) {
+          return {
+            ...conv,
+            messages: [...conv.messages, newMessage],
+            lastMessage: messageContent.substring(0, 60) + (messageContent.length > 60 ? '...' : ''),
+            timestamp: 'Just now',
+          };
+        }
+        return conv;
+      })
+    );
+
+    // Clear input
+    setMessageText('');
+
+    // Save to backend as a notification
+    try {
+      await axios.post(`${API_BASE}/notifications`, {
+        candidate_id: parseInt(selectedConversation.id),
+        message: messageContent,
+        event_type: 'message',
+        from_stage: null,
+        to_stage: null,
+        is_ai_generated: false,
+      });
+      console.log('Message saved to backend');
+    } catch (error) {
+      console.error('Failed to save message to backend:', error);
+      // Message still shows in UI, just not persisted
+    }
+  };
+
+  const handleScheduleMeeting = async () => {
+    if (!meetingDate || !meetingTime || !selectedConversation) {
       alert('Please fill in all meeting details');
       return;
     }
-    console.log('Scheduling meeting:', { meetingDate, meetingTime, meetingDuration, meetingType });
+
+    const meetingMessage: Message = {
+      id: `meeting-${Date.now()}`,
+      senderId: 'recruiter',
+      text: '',
+      timestamp: 'Just now',
+      type: 'meeting',
+      meetingData: {
+        date: new Date(meetingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        time: meetingTime,
+        duration: `${meetingDuration} min`,
+        type: meetingType,
+      },
+    };
+
+    // Update UI
+    setSelectedConversation(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        messages: [...prev.messages, meetingMessage],
+        lastMessage: `Meeting scheduled for ${meetingMessage.meetingData?.date}`,
+        timestamp: 'Just now',
+      };
+    });
+
+    // Update conversations list
+    setRealCandidateConversations(prev =>
+      prev.map(conv => {
+        if (String(conv.id) === String(selectedConversation.id)) {
+          return {
+            ...conv,
+            messages: [...conv.messages, meetingMessage],
+            lastMessage: `Meeting scheduled for ${meetingMessage.meetingData?.date}`,
+            timestamp: 'Just now',
+          };
+        }
+        return conv;
+      })
+    );
+
+    // Save to backend
+    try {
+      await axios.post(`${API_BASE}/notifications`, {
+        candidate_id: parseInt(selectedConversation.id),
+        message: `Meeting scheduled for ${meetingMessage.meetingData?.date} at ${meetingTime} (${meetingDuration} min ${meetingType} call)`,
+        event_type: 'meeting_scheduled',
+        from_stage: null,
+        to_stage: null,
+        is_ai_generated: false,
+      });
+    } catch (error) {
+      console.error('Failed to save meeting to backend:', error);
+    }
+
     setShowScheduleModal(false);
     setMeetingDate('');
     setMeetingTime('');
@@ -462,12 +788,64 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
     setMeetingType('video');
   };
 
-  const handleSendAssessment = () => {
-    if (!assessmentTitle.trim()) {
+  const handleSendAssessment = async () => {
+    if (!assessmentTitle.trim() || !selectedConversation) {
       alert('Please enter an assessment title');
       return;
     }
-    console.log('Sending assessment:', { assessmentTitle, assessmentTimeLimit });
+
+    const assessmentMessage: Message = {
+      id: `assessment-${Date.now()}`,
+      senderId: 'recruiter',
+      text: '',
+      timestamp: 'Just now',
+      type: 'assessment',
+      assessmentData: {
+        title: assessmentTitle,
+        status: 'sent',
+      },
+    };
+
+    // Update UI
+    setSelectedConversation(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        messages: [...prev.messages, assessmentMessage],
+        lastMessage: `Assessment sent: ${assessmentTitle}`,
+        timestamp: 'Just now',
+      };
+    });
+
+    // Update conversations list
+    setRealCandidateConversations(prev =>
+      prev.map(conv => {
+        if (String(conv.id) === String(selectedConversation.id)) {
+          return {
+            ...conv,
+            messages: [...conv.messages, assessmentMessage],
+            lastMessage: `Assessment sent: ${assessmentTitle}`,
+            timestamp: 'Just now',
+          };
+        }
+        return conv;
+      })
+    );
+
+    // Save to backend
+    try {
+      await axios.post(`${API_BASE}/notifications`, {
+        candidate_id: parseInt(selectedConversation.id),
+        message: `Assessment sent: ${assessmentTitle} (Time limit: ${assessmentTimeLimit === 'no-limit' ? 'No limit' : assessmentTimeLimit + ' hours'})`,
+        event_type: 'assessment_sent',
+        from_stage: null,
+        to_stage: null,
+        is_ai_generated: false,
+      });
+    } catch (error) {
+      console.error('Failed to save assessment to backend:', error);
+    }
+
     setShowAssessmentModal(false);
     setAssessmentTitle('');
     setAssessmentTimeLimit('no-limit');
@@ -501,8 +879,60 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
     setAiGenerating(false);
   };
 
-  const useAIMessage = () => {
-    setMessageText(generatedMessage);
+  const useAIMessage = async () => {
+    if (!generatedMessage.trim() || !selectedConversation) return;
+
+    const messageContent = generatedMessage.trim();
+
+    const newMessage: Message = {
+      id: `ai-${Date.now()}`,
+      senderId: 'recruiter',
+      text: messageContent,
+      timestamp: 'Just now',
+      type: 'text',
+    };
+
+    // Update UI
+    setSelectedConversation(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        messages: [...prev.messages, newMessage],
+        lastMessage: messageContent.substring(0, 60) + (messageContent.length > 60 ? '...' : ''),
+        timestamp: 'Just now',
+      };
+    });
+
+    // Update conversations list
+    setRealCandidateConversations(prev =>
+      prev.map(conv => {
+        if (String(conv.id) === String(selectedConversation.id)) {
+          return {
+            ...conv,
+            messages: [...conv.messages, newMessage],
+            lastMessage: messageContent.substring(0, 60) + (messageContent.length > 60 ? '...' : ''),
+            timestamp: 'Just now',
+          };
+        }
+        return conv;
+      })
+    );
+
+    // Save to backend
+    try {
+      await axios.post(`${API_BASE}/notifications`, {
+        candidate_id: parseInt(selectedConversation.id),
+        message: messageContent,
+        event_type: 'message',
+        from_stage: null,
+        to_stage: null,
+        is_ai_generated: true,
+      });
+      console.log('AI message saved to backend');
+    } catch (error) {
+      console.error('Failed to save AI message to backend:', error);
+    }
+
     setShowAIMessageModal(false);
     setGeneratedMessage('');
   };
@@ -1065,13 +1495,55 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
 
         {/* Search */}
         <div className="px-6 pb-4">
+          {activeTab === 'candidates' && (
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setSearchMode('conversations')}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs transition-all ${
+                  searchMode === 'conversations'
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    : 'bg-gray-900/60 text-gray-400 border border-gray-800 hover:bg-gray-800'
+                }`}
+              >
+                Conversations
+              </button>
+              <button
+                onClick={() => setSearchMode('candidates')}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs transition-all ${
+                  searchMode === 'candidates'
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    : 'bg-gray-900/60 text-gray-400 border border-gray-800 hover:bg-gray-800'
+                }`}
+              >
+                All Candidates
+              </button>
+              <button
+                onClick={() => setSearchMode('username')}
+                className={`flex-1 px-3 py-2 rounded-lg text-xs transition-all ${
+                  searchMode === 'username'
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    : 'bg-gray-900/60 text-gray-400 border border-gray-800 hover:bg-gray-800'
+                }`}
+              >
+                By Username
+              </button>
+            </div>
+          )}
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
             <input
               type="text"
-              placeholder={`Search ${activeTab === 'candidates' ? 'candidates' : 'coworkers'}...`}
+              placeholder={
+                activeTab === 'internal'
+                  ? 'Search coworkers...'
+                  : searchMode === 'conversations'
+                  ? 'Search conversations...'
+                  : searchMode === 'candidates'
+                  ? 'Search all candidates...'
+                  : 'Search by @username...'
+              }
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e: any) => setSearchQuery(e.target.value)}
               className="w-full pl-12 pr-4 py-3 bg-gray-900/60 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             />
           </div>
@@ -1080,10 +1552,16 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
 
       {/* Conversations List */}
       <div className="flex-1 overflow-y-auto">
-        {filteredConversations.map((conversation) => (
+        {filteredConversations.map((conversation: any) => (
           <button
             key={conversation.id}
-            onClick={() => setSelectedConversation(conversation)}
+            onClick={() => {
+              if (conversation.isSearchResult) {
+                handleOpenCandidateConversation(conversation.id);
+              } else {
+                setSelectedConversation(conversation);
+              }
+            }}
             className="w-full p-4 border-b border-gray-800/50 hover:bg-gradient-to-r hover:from-gray-900/40 hover:to-transparent transition-all text-left group"
           >
             <div className="flex items-center gap-3">

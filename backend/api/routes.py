@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
-from ..models.schemas import ScoutRequest, CandidateResponse, DetailedCandidateResponse, UpdatePipelineRequest
+from ..models.schemas import ScoutRequest, CandidateResponse, DetailedCandidateResponse, UpdatePipelineRequest, NotificationRequest, NotificationResponse
 from ..services.talent_service import TalentService
 
 router = APIRouter()
@@ -91,4 +91,43 @@ async def update_pipeline_stage(candidate_id: int, request: UpdatePipelineReques
         raise
     except Exception as e:
         print(f"Update pipeline stage error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.post("/notifications", response_model=NotificationResponse)
+async def create_notification(request: NotificationRequest):
+    """Create a notification for a candidate (e.g., when advancing stages)"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        notification = await talent_service.create_notification(request)
+
+        await talent_service.prisma.disconnect()
+
+        if not notification:
+            raise HTTPException(status_code=404, detail="Failed to create notification")
+
+        return notification
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Create notification error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/candidates/{candidate_id}/notifications", response_model=List[NotificationResponse])
+async def get_candidate_notifications(candidate_id: int):
+    """Get all notifications for a specific candidate"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        notifications = await talent_service.get_candidate_notifications(candidate_id)
+
+        await talent_service.prisma.disconnect()
+
+        return notifications
+
+    except Exception as e:
+        print(f"Get notifications error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

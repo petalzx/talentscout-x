@@ -65,3 +65,22 @@ class DetailedCandidateResponse(BaseModel):
 class UpdatePipelineRequest(BaseModel):
     candidate_id: int
     pipeline_stage: Optional[str]  # null, "Qualified", "Screening", "Round 1", etc.
+
+class NotificationRequest(BaseModel):
+    candidate_id: int
+    message: str
+    event_type: str  # "stage_advance", "stage_reject", etc.
+    from_stage: Optional[str] = None
+    to_stage: Optional[str] = None
+    is_ai_generated: bool = False
+
+class NotificationResponse(BaseModel):
+    id: int
+    candidate_id: int
+    candidate_name: str
+    message: str
+    event_type: str
+    from_stage: Optional[str]
+    to_stage: Optional[str]
+    is_ai_generated: bool
+    sent_at: str
