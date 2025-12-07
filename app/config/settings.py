@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     project_name: str = "TalentScout X"
     version: str = "0.1.0"
     xai_base_url: str = "https://api.x.ai/v1"
-    xai_model: str = "grok-beta"  # or "grok-2-1212"
+    xai_model: str = "grok-3"  # Updated from deprecated grok-beta
 
     class Config:
         env_file = ".env"
