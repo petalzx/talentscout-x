@@ -7,23 +7,39 @@ datasource db {
   url      = "file:dev.db"
 }
 
-model Search {
-  id          Int       @id @default(autoincrement())
-  role_title  String
-  keywords    String
-  created_at  DateTime  @default(now())
-  candidates  Candidate[]
+model User {
+  id            Int       @id @default(autoincrement())
+  handle        String    @unique
+  bio           String?
+  followers     Int
+  location      String?
+  verified      Boolean   @default(false)
+  tweetsSummary String?  // Grok parsed tweet content/activity
+  createdAt     DateTime  @default(now())
+  rankings      Ranking[]
 
-  @@map("Search")
+  @@map("User")
 }
 
-model Candidate {
-  id          Int     @id @default(autoincrement())
-  handle      String
-  match_score Int
-  reasoning   String
-  searchId    Int
-  search      Search  @relation(fields: [searchId], references: [id], onDelete: Cascade)
+model SearchSession {
+  id          Int       @id @default(autoincrement())
+  roleTitle   String
+  jobDesc     String?
+  keywords    String  // Comma-separated
+  createdAt   DateTime  @default(now())
+  rankings    Ranking[]
 
-  @@map("Candidate")
+  @@map("SearchSession")
+}
+
+model Ranking {
+  id         Int         @id @default(autoincrement())
+  matchScore Int
+  reasoning  String
+  userId     Int
+  sessionId  Int
+  user       User        @relation(fields: [userId], references: [id])
+  session    SearchSession @relation(fields: [sessionId], references: [id])
+
+  @@map("Ranking")
 }
