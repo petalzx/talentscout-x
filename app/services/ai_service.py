@@ -38,10 +38,11 @@ async def rank_candidates(request: ScoutRequest, profiles: List[str]) -> List[Di
 Keywords to match: {', '.join(request.keywords)}
 Location preference: {request.location_filter or 'Any'}
 
-Profiles to evaluate (rank all):
+Top profiles with tweet content for deep score (rank top 20 by fit; use posts for activity/expertise):
+
 """
-    for i, profile in enumerate(profiles, 1):
-        user_prompt += f"\n{i}. {profile}"
+    for i, profile in enumerate(profiles[:20], 1):  # Top 20 enriched
+        user_prompt += f"\n{i}. {profile}"  # Includes tweet summary for content analysis
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},

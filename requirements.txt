@@ -1,7 +1,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.31.1
 prisma==0.15.0  # ORM for type-safe DB
-tweepy==4.16.0
+
 httpx==0.27.2
 python-dotenv==1.0.1
 pydantic-settings==2.5.2

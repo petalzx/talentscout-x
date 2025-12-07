@@ -1,4 +1,5 @@
-import tweepy
+import httpx
+import urllib.parse
 import os
 from typing import List, Optional
 
