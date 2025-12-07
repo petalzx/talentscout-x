@@ -6,7 +6,7 @@ from ..services.ingestion import get_profiles
 from ..services.ai_service import rank_candidates
 from prisma import Prisma
 from ..db.database import prisma as prisma_client  # Global Prisma client
-from ..db.database import DB_PATH  # But since settings, wait
+
 from ..config.settings import settings
 
 router = APIRouter()
@@ -21,7 +21,8 @@ async def scout(request: ScoutRequest):
         profiles = await get_profiles(
             role_title=request.role_title,
             keywords=request.keywords,
-            location_filter=request.location_filter
+            location_filter=request.location_filter,
+            limit=request.limit
         )
         if not profiles:
             return []

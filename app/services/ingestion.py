@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from ..config.settings import settings
 
-async def get_profiles(role_title: str, keywords: List[str], location_filter: Optional[str] = None) -> List[str]:
+async def get_profiles(role_title: str, keywords: List[str], location_filter: Optional[str] = None, limit: int = 20) -> List[str]:
     bearer_token = settings.twitter_bearer_token
     use_mock = not bearer_token or bearer_token == "your_twitter_bearer_token_here"
     
@@ -27,10 +27,11 @@ async def get_profiles(role_title: str, keywords: List[str], location_filter: Op
                 query_terms.append(location_filter)
                 print(f"Note: Geo limited in free tier; added '{location_filter}' as keyword approx")
 
+            max_results = min(request.limit or 20, 500)  # Twitter max; batch scale
             tweets_response = twitter_client.search_recent_tweets(
                 query=query,
-                max_results=20,
-                tweet_fields=["author_id", "created_at"]
+                max_results=max_results,
+                tweet_fields=["author_id", "created_at", "public_metrics"]
             )
             if not tweets_response.data:
                 return []
