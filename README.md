@@ -1,5 +1,7 @@
 # TalentScout X MVP
 
+[![GitHub Repo](https://github.com/petalzx/talentscout-x)](https://github.com/petalzx/talentscout-x)
+
 ## Setup
 
 1. Create and activate virtual environment:
