@@ -21,7 +21,7 @@ export default function App() {
       case 'pipeline':
         return <Pipeline onSelectCandidate={setSelectedCandidate} />;
       case 'messages':
-        return <Messages />;
+        return <Messages onSelectCandidate={setSelectedCandidate} />;
       default:
         return <CandidateFeed onSelectCandidate={setSelectedCandidate} />;
     }
