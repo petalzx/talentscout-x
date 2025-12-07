@@ -13,6 +13,13 @@ class TwitterService:
             "Content-Type": "application/json"
         }
 
+    def _upgrade_image_quality(self, url: str) -> str:
+        """Upgrade Twitter profile image from _normal (48x48) to higher resolution"""
+        if not url:
+            return url
+        # Replace _normal (48x48) with _400x400 for better quality
+        return url.replace('_normal.', '_400x400.')
+
     def _build_enhanced_query(self, keywords: List[str], job_title: str = "") -> str:
         """Build enhanced Twitter search query with role context"""
 
@@ -67,6 +74,33 @@ class TwitterService:
         # AND meet minimum followers and bio length requirements
         return (has_role_indicator or has_tech_keyword) and has_min_followers and has_meaningful_bio
 
+    async def _enrich_user_with_banner(self, client: httpx.AsyncClient, user: TwitterUser) -> TwitterUser:
+        """Fetch full user details to get banner image (tweet search doesn't return it)"""
+        try:
+            params = {
+                "user.fields": "profile_banner_url"
+            }
+
+            response = await client.get(
+                f"{settings.TWITTER_BASE_URL}/users/{user.id}",
+                headers=self.headers,
+                params=params
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("data", {}).get("profile_banner_url"):
+                    user.profile_banner_url = data["data"]["profile_banner_url"]
+                    print(f"  ✓ Got banner for @{user.username}")
+                else:
+                    print(f"  - No banner for @{user.username}")
+
+            return user
+
+        except Exception as e:
+            print(f"  ✗ Error fetching banner for @{user.username}: {e}")
+            return user
+
     async def search_users(self, keywords: List[str], job_title: str = "", max_results: int = 100) -> List[TwitterUser]:
         try:
             # Build enhanced query
@@ -79,7 +113,7 @@ class TwitterService:
                     "query": query,
                     "max_results": min(max_results, 100),
                     "expansions": "author_id",
-                    "user.fields": "public_metrics,description,profile_image_url,profile_banner_url,name,username"
+                    "user.fields": "public_metrics,description,profile_image_url,name,username"
                 }
 
                 response = await client.get(
@@ -108,8 +142,8 @@ class TwitterService:
                         name=user.get("name", user["username"]),
                         description=user.get("description", ""),
                         followers_count=user.get("public_metrics", {}).get("followers_count", 0),
-                        profile_image_url=user.get("profile_image_url", ""),
-                        profile_banner_url=user.get("profile_banner_url", ""),
+                        profile_image_url=self._upgrade_image_quality(user.get("profile_image_url", "")),
+                        profile_banner_url="",  # Will be enriched later
                     )
 
                     # Apply pre-filtering
@@ -119,7 +153,15 @@ class TwitterService:
                         filtered_count += 1
 
                 print(f"Found {len(users)} qualified candidates ({filtered_count} filtered out)")
-                return users
+
+                # Enrich with banner images (fetch full user profiles)
+                print(f"Fetching banner images for {len(users)} candidates...")
+                import asyncio
+                enriched_users = await asyncio.gather(*[
+                    self._enrich_user_with_banner(client, user) for user in users
+                ])
+
+                return enriched_users
 
         except Exception as e:
             print(f"Twitter API error: {e}")

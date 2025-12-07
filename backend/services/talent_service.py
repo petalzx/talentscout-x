@@ -179,6 +179,7 @@ class TalentService:
         """Get detailed candidate profile with tweets and AI insights"""
 
         # Get candidate with their best search result
+        # Note: Explicitly select all fields including headerImage
         candidate = await self.prisma.candidate.find_unique(
             where={"id": candidate_id},
             include={
@@ -243,6 +244,10 @@ class TalentService:
                 replies=0,
                 created_at=datetime.now().isoformat()
             ))
+
+        # Debug: Check what headerImage value we have
+        print(f"DEBUG: candidate.headerImage = {candidate.headerImage}")
+        print(f"DEBUG: hasattr headerImage = {hasattr(candidate, 'headerImage')}")
 
         return DetailedCandidateResponse(
             id=str(candidate.id),
