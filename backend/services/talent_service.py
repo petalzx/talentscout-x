@@ -3,13 +3,19 @@ from datetime import datetime
 from prisma import Prisma
 from .twitter_service import TwitterService
 from .grok_service import GrokService
+from .calendar_service import CalendarService
 from ..config.settings import settings
-from ..models.schemas import ScoutRequest, CandidateResponse, DetailedCandidateResponse, TweetResponse, NotificationRequest, NotificationResponse
+from ..models.schemas import (
+    ScoutRequest, CandidateResponse, DetailedCandidateResponse,
+    TweetResponse, NotificationRequest, NotificationResponse,
+    SendMessageRequest, MessageResponse, CreateEventRequest, EventResponse
+)
 
 class TalentService:
     def __init__(self):
         self.twitter_service = TwitterService()
         self.grok_service = GrokService()
+        self.calendar_service = CalendarService()
         self.prisma = Prisma()
 
     async def scout_talent(self, request: ScoutRequest) -> List[CandidateResponse]:
@@ -506,3 +512,367 @@ class TalentService:
         except Exception as e:
             print(f"Error in lookup_and_add_user: {e}")
             return None
+
+    async def send_message(self, request):
+        """Send a message in a conversation with a candidate"""
+        import json
+        import random
+
+        try:
+            # Save the message to database
+            message = await self.prisma.message.create({
+                "candidateId": request.candidate_id,
+                "content": request.content,
+                "senderId": request.sender_id,
+                "senderType": request.sender_type,
+                "messageType": request.message_type,
+                "metadata": request.metadata,
+                "isRead": False
+            })
+
+            # Generate AI response (100% chance for demo - always respond in real-time)
+            if request.sender_type == "recruiter":
+                # Get candidate info and conversation history
+                candidate = await self.prisma.candidate.find_unique(
+                    where={"id": request.candidate_id}
+                )
+
+                if candidate:
+                    # Get recent message history
+                    previous_messages = await self.prisma.message.find_many(
+                        where={"candidateId": request.candidate_id},
+                        order={"createdAt": "desc"},
+                        take=10
+                    )
+
+                    # Generate contextual AI response
+                    ai_response = await self._generate_candidate_response(
+                        candidate=candidate,
+                        recruiter_message=request.content,
+                        conversation_history=previous_messages
+                    )
+
+                    if ai_response:
+                        # Save AI-generated response
+                        await self.prisma.message.create({
+                            "candidateId": request.candidate_id,
+                            "content": ai_response,
+                            "senderId": str(request.candidate_id),
+                            "senderType": "candidate",
+                            "messageType": "text",
+                            "metadata": json.dumps({"ai_generated": True}),
+                            "isRead": False
+                        })
+
+                        print(f"✓ AI response generated for {candidate.name}")
+
+            return {
+                "id": message.id,
+                "candidate_id": message.candidateId,
+                "content": message.content,
+                "sender_id": message.senderId,
+                "sender_type": message.senderType,
+                "message_type": message.messageType,
+                "metadata": message.metadata,
+                "is_read": message.isRead,
+                "created_at": message.createdAt.isoformat()
+            }
+
+        except Exception as e:
+            print(f"Error sending message: {e}")
+            return None
+
+    async def _generate_candidate_response(self, candidate, recruiter_message: str, conversation_history) -> str:
+        """Generate a realistic AI response from a candidate"""
+        import random
+
+        try:
+            # Build conversation context
+            conversation_context = ""
+            if conversation_history:
+                for msg in reversed(list(conversation_history)[-5:]):  # Last 5 messages
+                    sender = "Recruiter" if msg.senderType == "recruiter" else candidate.name
+                    conversation_context += f"{sender}: {msg.content}\n"
+
+            # Determine response type based on message content
+            message_lower = recruiter_message.lower()
+
+            # Check for specific scenarios
+            is_initial_outreach = len(conversation_history) <= 1
+            is_scheduling = any(word in message_lower for word in ["schedule", "time", "available", "call", "meeting", "interview"])
+            is_technical = any(word in message_lower for word in ["experience", "skills", "tech", "project", "work on"])
+            is_compensation = any(word in message_lower for word in ["salary", "compensation", "pay", "benefits"])
+            is_next_steps = any(word in message_lower for word in ["next steps", "process", "timeline"])
+
+            # Create a prompt for Grok
+            prompt = f"""You are {candidate.name}, a {candidate.bio[:100] if candidate.bio else 'software engineer'}.
+
+A recruiter just messaged you: "{recruiter_message}"
+
+Recent conversation:
+{conversation_context}
+
+Generate a realistic, professional response (2-4 sentences max). Be:
+- Professional but friendly
+- Interested and engaged
+- Specific about your background when relevant
+- Natural and conversational
+
+Response type: {"Initial interest" if is_initial_outreach else "Follow-up"}
+Context: {"Scheduling" if is_scheduling else "Technical discussion" if is_technical else "Compensation" if is_compensation else "Next steps" if is_next_steps else "General"}
+
+Your response:"""
+
+            # Use Grok to generate response
+            response = await self.grok_service._make_grok_request(
+                prompt=prompt,
+                temperature=0.8,  # Higher for more variety
+                max_tokens=200
+            )
+
+            if response:
+                # Clean up the response
+                cleaned_response = response.strip()
+                # Remove quotes if Grok added them
+                if cleaned_response.startswith('"') and cleaned_response.endswith('"'):
+                    cleaned_response = cleaned_response[1:-1]
+                return cleaned_response
+
+        except Exception as e:
+            print(f"Error generating AI response: {e}")
+
+        # Fallback to template responses if AI fails
+        fallback_responses = {
+            "initial": [
+                "Thanks for reaching out! I'd love to learn more about this opportunity.",
+                "This sounds interesting! Could you share more details about the role?",
+                "I appreciate you thinking of me. I'm currently exploring new opportunities."
+            ],
+            "scheduling": [
+                "I'm available next week. What times work best for you?",
+                "Yes, I'd be happy to schedule a call. I'm flexible this week.",
+                "That works for me! Should I expect a calendar invite?"
+            ],
+            "technical": [
+                f"I've been working with {candidate.bio[:50] if candidate.bio else 'various technologies'} recently. Happy to discuss my experience!",
+                "Yes, I have experience in that area. I'd love to dive deeper in a conversation.",
+                "That's definitely a strength of mine. When can we discuss this further?"
+            ],
+            "next_steps": [
+                "What does the interview process look like?",
+                "I'm excited to move forward. What are the next steps?",
+                "Sounds good! What should I expect timeline-wise?"
+            ],
+            "general": [
+                "Thanks for the update! Let me know how I can help.",
+                "Sounds great! I'm looking forward to learning more.",
+                "I appreciate the information. Happy to continue the conversation."
+            ]
+        }
+
+        # Choose appropriate fallback
+        if is_initial_outreach:
+            return random.choice(fallback_responses["initial"])
+        elif is_scheduling:
+            return random.choice(fallback_responses["scheduling"])
+        elif is_technical:
+            return random.choice(fallback_responses["technical"])
+        elif is_next_steps:
+            return random.choice(fallback_responses["next_steps"])
+        else:
+            return random.choice(fallback_responses["general"])
+
+    async def get_candidate_messages(self, candidate_id: int):
+        """Get all messages for a specific candidate"""
+        try:
+            messages = await self.prisma.message.find_many(
+                where={"candidateId": candidate_id},
+                order={"createdAt": "asc"}
+            )
+
+            return [
+                {
+                    "id": msg.id,
+                    "candidate_id": msg.candidateId,
+                    "content": msg.content,
+                    "sender_id": msg.senderId,
+                    "sender_type": msg.senderType,
+                    "message_type": msg.messageType,
+                    "metadata": msg.metadata,
+                    "is_read": msg.isRead,
+                    "created_at": msg.createdAt.isoformat()
+                }
+                for msg in messages
+            ]
+
+        except Exception as e:
+            print(f"Error getting messages: {e}")
+            return []
+
+    async def create_event(self, request):
+        """Create a calendar event/meeting with a candidate and send calendar invite"""
+        from datetime import datetime
+        import json
+
+        try:
+            # Parse the scheduled_at datetime
+            scheduled_at = datetime.fromisoformat(request.scheduled_at.replace('Z', '+00:00'))
+
+            # Get candidate info for the invite
+            candidate = await self.prisma.candidate.find_unique(
+                where={"id": request.candidate_id}
+            )
+
+            if not candidate:
+                print(f"Candidate {request.candidate_id} not found")
+                return None
+
+            # Create the event in database
+            event = await self.prisma.event.create({
+                "candidateId": request.candidate_id,
+                "title": request.title,
+                "description": request.description,
+                "eventType": request.event_type,
+                "scheduledAt": scheduled_at,
+                "duration": request.duration,
+                "meetingType": request.meeting_type,
+                "meetingLink": request.meeting_link,
+                "notes": request.notes,
+                "status": "scheduled"
+            })
+
+            # Generate calendar invite (.ics file content)
+            calendar_invite = self.calendar_service.generate_ics(
+                title=request.title,
+                description=request.description or f"Interview for {candidate.name}",
+                start_time=scheduled_at,
+                duration_minutes=request.duration,
+                organizer_email="recruiting@company.com",
+                organizer_name="Recruiting Team",
+                attendee_email=f"{candidate.handle.replace('@', '')}@example.com",  # Simulated email
+                attendee_name=candidate.name,
+                location=request.meeting_type.capitalize(),
+                meeting_link=request.meeting_link
+            )
+
+            # Create a friendly message with meeting details
+            event_date = scheduled_at.strftime('%B %d, %Y')
+            event_time = scheduled_at.strftime('%I:%M %p')
+
+            invite_message = self.calendar_service.create_calendar_message(
+                candidate_name=candidate.name,
+                event_title=request.title,
+                event_date=event_date,
+                event_time=event_time,
+                duration=request.duration,
+                meeting_type=request.meeting_type,
+                meeting_link=request.meeting_link
+            )
+
+            # Send the calendar invite as a message
+            await self.prisma.message.create({
+                "candidateId": request.candidate_id,
+                "content": invite_message,
+                "senderId": "recruiter-1",  # System-generated
+                "senderType": "recruiter",
+                "messageType": "meeting",
+                "metadata": json.dumps({
+                    "event_id": event.id,
+                    "calendar_invite": calendar_invite,
+                    "meeting_link": request.meeting_link,
+                    "scheduled_at": scheduled_at.isoformat(),
+                    "duration": request.duration
+                }),
+                "isRead": False
+            })
+
+            print(f"✓ Calendar invite sent to {candidate.name} for {event_date} at {event_time}")
+
+            return {
+                "id": event.id,
+                "candidate_id": event.candidateId,
+                "title": event.title,
+                "description": event.description,
+                "event_type": event.eventType,
+                "scheduled_at": event.scheduledAt.isoformat(),
+                "duration": event.duration,
+                "meeting_type": event.meetingType,
+                "status": event.status,
+                "meeting_link": event.meetingLink,
+                "notes": event.notes,
+                "created_at": event.createdAt.isoformat(),
+                "calendar_invite_sent": True
+            }
+
+        except Exception as e:
+            print(f"Error creating event: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    async def get_candidate_events(self, candidate_id: int):
+        """Get all events for a specific candidate"""
+        try:
+            events = await self.prisma.event.find_many(
+                where={"candidateId": candidate_id},
+                order={"scheduledAt": "asc"}
+            )
+
+            return [
+                {
+                    "id": evt.id,
+                    "candidate_id": evt.candidateId,
+                    "title": evt.title,
+                    "description": evt.description,
+                    "event_type": evt.eventType,
+                    "scheduled_at": evt.scheduledAt.isoformat(),
+                    "duration": evt.duration,
+                    "meeting_type": evt.meetingType,
+                    "status": evt.status,
+                    "meeting_link": evt.meetingLink,
+                    "notes": evt.notes,
+                    "created_at": evt.createdAt.isoformat()
+                }
+                for evt in events
+            ]
+
+        except Exception as e:
+            print(f"Error getting events: {e}")
+            return []
+
+    async def get_all_events(self):
+        """Get all upcoming events across all candidates"""
+        from datetime import datetime
+
+        try:
+            # Get events that are scheduled (not completed or cancelled)
+            events = await self.prisma.event.find_many(
+                where={
+                    "status": "scheduled",
+                    "scheduledAt": {"gte": datetime.now()}
+                },
+                order={"scheduledAt": "asc"},
+                include={"candidate": True}
+            )
+
+            return [
+                {
+                    "id": evt.id,
+                    "candidate_id": evt.candidateId,
+                    "title": evt.title,
+                    "description": evt.description,
+                    "event_type": evt.eventType,
+                    "scheduled_at": evt.scheduledAt.isoformat(),
+                    "duration": evt.duration,
+                    "meeting_type": evt.meetingType,
+                    "status": evt.status,
+                    "meeting_link": evt.meetingLink,
+                    "notes": evt.notes,
+                    "created_at": evt.createdAt.isoformat()
+                }
+                for evt in events
+            ]
+
+        except Exception as e:
+            print(f"Error getting all events: {e}")
+            return []

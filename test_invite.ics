@@ -1,0 +1,24 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//TalentScout X//Meeting Scheduler//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:f4313471-9042-47a3-a88b-e0199eb2bee7
+DTSTAMP:20251207T163504Z
+DTSTART:20251212T140000Z
+DTEND:20251212T150000Z
+SUMMARY:Technical Interview - Frontend Role
+DESCRIPTION:Discuss React expertise\, system design\, and past projects\\n\\nJoin Meeting: https://meet.google.com/abc-defg-hij
+LOCATION:Video
+ORGANIZER;CN=Recruiting Team:mailto:recruiting@company.com
+ATTENDEE;CN=Shreemaan Abhishek;RSVP=TRUE:mailto:shreemaan_abhi@example.com
+STATUS:CONFIRMED
+SEQUENCE:0
+BEGIN:VALARM
+TRIGGER:-PT15M
+ACTION:DISPLAY
+DESCRIPTION:Reminder: Technical Interview - Frontend Role in 15 minutes
+END:VALARM
+END:VEVENT
+END:VCALENDAR

@@ -1,0 +1,10 @@
+{
+  "candidate_id": 1,
+  "title": "Phone Screen with Alex",
+  "description": "Initial phone screen to discuss the Senior Frontend Engineer role",
+  "event_type": "phone_screen",
+  "scheduled_at": "2025-12-10T10:00:00Z",
+  "duration": 30,
+  "meeting_type": "phone",
+  "notes": "Discuss React experience and career goals"
+}

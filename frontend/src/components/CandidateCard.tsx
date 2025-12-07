@@ -1,4 +1,5 @@
-import { Heart, MessageCircle, UserPlus, TrendingUp, Briefcase } from 'lucide-react';
+import React from 'react';
+import { TrendingUp, Briefcase } from 'lucide-react';
 
 interface Candidate {
   id: string;
@@ -11,7 +12,6 @@ interface Candidate {
   match: number;
   tags: string[];
   recentPost: string;
-  engagement: string;
   roles?: string[];
 }
 
@@ -76,8 +76,7 @@ export function CandidateCard({ candidate, onClick }: CandidateCardProps) {
 
       {/* Recent Post */}
       <div className="bg-gradient-to-br from-gray-900/80 to-gray-900/40 rounded-xl p-3 mb-2 border border-gray-800/50">
-        <p className="text-xs text-gray-300 mb-1.5 leading-relaxed">{candidate.recentPost}</p>
-        <span className="text-xs text-gray-500">{candidate.engagement}</span>
+        <p className="text-xs text-gray-300 leading-relaxed line-clamp-3">{candidate.recentPost}</p>
       </div>
 
       {/* Stats */}

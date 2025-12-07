@@ -731,64 +731,100 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   };
 
 
+  const refreshMessages = async () => {
+    if (!selectedConversation) return;
+
+    try {
+      // Fetch messages from backend
+      const response = await axios.get(`${API_BASE}/candidates/${selectedConversation.id}/messages`);
+      const apiMessages = response.data;
+
+      // Transform API messages to UI format
+      const formattedMessages: Message[] = apiMessages.map((msg: any) => ({
+        id: msg.id.toString(),
+        senderId: msg.sender_type === 'recruiter' ? msg.sender_id : msg.candidate_id.toString(),
+        text: msg.content,
+        timestamp: formatTimestamp(msg.created_at),
+        type: msg.message_type as 'text' | 'meeting' | 'assessment' | 'feedback',
+      }));
+
+      // Update selected conversation with new messages
+      setSelectedConversation((prev: Conversation | null) => {
+        if (!prev) return prev;
+        const lastMessage = formattedMessages[formattedMessages.length - 1];
+        return {
+          ...prev,
+          messages: formattedMessages,
+          lastMessage: lastMessage ? lastMessage.text.substring(0, 60) : prev.lastMessage,
+          timestamp: lastMessage ? lastMessage.timestamp : prev.timestamp,
+        };
+      });
+
+      // Also update in the conversations list
+      setRealCandidateConversations((prev: Conversation[]) =>
+        prev.map((conv: Conversation) => {
+          if (String(conv.id) === String(selectedConversation.id)) {
+            const lastMessage = formattedMessages[formattedMessages.length - 1];
+            return {
+              ...conv,
+              messages: formattedMessages,
+              lastMessage: lastMessage ? lastMessage.text.substring(0, 60) : conv.lastMessage,
+              timestamp: lastMessage ? lastMessage.timestamp : conv.timestamp,
+            };
+          }
+          return conv;
+        })
+      );
+
+      console.log('Messages refreshed:', formattedMessages.length);
+    } catch (error) {
+      console.error('Failed to refresh messages:', error);
+    }
+  };
+
+  const formatTimestamp = (isoString: string): string => {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return `${Math.floor(diffDays / 7)}w ago`;
+  };
+
   const handleSendMessage = async () => {
     if (!messageText.trim() || !selectedConversation) return;
 
     const messageContent = messageText.trim();
     console.log('Sending message:', messageContent);
 
-    // Create a temporary message ID
-    const tempMessageId = `temp-${Date.now()}`;
-    const newMessage: Message = {
-      id: tempMessageId,
-      senderId: 'recruiter',
-      text: messageContent,
-      timestamp: 'Just now',
-      type: 'text',
-    };
-
-    // Optimistically update UI
-    setSelectedConversation((prev: Conversation | null) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        messages: [...prev.messages, newMessage],
-        lastMessage: messageContent.substring(0, 60) + (messageContent.length > 60 ? '...' : ''),
-        timestamp: 'Just now',
-      };
-    });
-
-    // Update in conversations list
-    setRealCandidateConversations((prev: Conversation[]) =>
-      prev.map((conv: Conversation) => {
-        if (String(conv.id) === String(selectedConversation.id)) {
-          return {
-            ...conv,
-            messages: [...conv.messages, newMessage],
-            lastMessage: messageContent.substring(0, 60) + (messageContent.length > 60 ? '...' : ''),
-            timestamp: 'Just now',
-          };
-        }
-        return conv;
-      })
-    );
-
-    // Clear input
+    // Clear input immediately for better UX
     setMessageText('');
 
-    // Save to backend as a notification
     try {
-      await axios.post(`${API_BASE}/notifications`, {
+      // Send message to backend API
+      const response = await axios.post(`${API_BASE}/messages`, {
         candidate_id: parseInt(selectedConversation.id),
-        message: messageContent,
-        event_type: 'message',
-        from_stage: null,
-        to_stage: null,
-        is_ai_generated: false,
+        content: messageContent,
+        sender_id: 'recruiter-1',
+        sender_type: 'recruiter',
+        message_type: 'text'
       });
-      console.log('Message saved to backend');
+
+      console.log('Message sent:', response.data);
+
+      // Wait a moment for AI response to be generated
+      setTimeout(async () => {
+        await refreshMessages();
+      }, 3000); // 3 second delay to allow AI to respond
+
     } catch (error) {
-      console.error('Failed to save message to backend:', error);
+      console.error('Failed to send message:', error);
       // Message still shows in UI, just not persisted
     }
   };
@@ -1895,11 +1931,32 @@ Deliverables:
         {filteredConversations.map((conversation: any) => (
           <button
             key={conversation.id}
-            onClick={() => {
+            onClick={async () => {
               if (conversation.isSearchResult) {
                 handleOpenCandidateConversation(conversation.id);
               } else {
                 setSelectedConversation(conversation);
+                // Load messages from API when conversation is selected
+                setTimeout(async () => {
+                  try {
+                    const response = await axios.get(`${API_BASE}/candidates/${conversation.id}/messages`);
+                    const apiMessages = response.data;
+
+                    if (apiMessages.length > 0) {
+                      const formattedMessages: Message[] = apiMessages.map((msg: any) => ({
+                        id: msg.id.toString(),
+                        senderId: msg.sender_type === 'recruiter' ? msg.sender_id : msg.candidate_id.toString(),
+                        text: msg.content,
+                        timestamp: formatTimestamp(msg.created_at),
+                        type: msg.message_type as 'text' | 'meeting' | 'assessment' | 'feedback',
+                      }));
+
+                      setSelectedConversation(prev => prev ? { ...prev, messages: formattedMessages } : null);
+                    }
+                  } catch (error) {
+                    console.error('Failed to load messages:', error);
+                  }
+                }, 100);
               }
             }}
             className="w-full p-4 border-b border-gray-800/50 hover:bg-gradient-to-r hover:from-gray-900/40 hover:to-transparent transition-all text-left group"

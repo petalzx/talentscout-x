@@ -17,7 +17,6 @@ class CandidateResponse(BaseModel):
     match: int
     tags: List[str]
     recent_post: str
-    engagement: str = "0 replies · 0 likes"
     roles: List[str]
     pipeline_stage: Optional[str] = None
 
@@ -84,3 +83,47 @@ class NotificationResponse(BaseModel):
     to_stage: Optional[str]
     is_ai_generated: bool
     sent_at: str
+
+class SendMessageRequest(BaseModel):
+    candidate_id: int
+    content: str
+    sender_id: str  # "recruiter-1", "recruiter-2", "hiring-manager-1", etc.
+    sender_type: str = "recruiter"  # "recruiter" or "candidate"
+    message_type: str = "text"  # "text", "meeting", "assessment"
+    metadata: Optional[str] = None  # JSON string for meeting/assessment details
+
+class MessageResponse(BaseModel):
+    id: int
+    candidate_id: int
+    content: str
+    sender_id: str
+    sender_type: str
+    message_type: str
+    metadata: Optional[str]
+    is_read: bool
+    created_at: str
+
+class CreateEventRequest(BaseModel):
+    candidate_id: int
+    title: str
+    description: Optional[str] = None
+    event_type: str  # "phone_screen", "technical", "final", etc.
+    scheduled_at: str  # ISO datetime string
+    duration: int  # Duration in minutes
+    meeting_type: str = "video"  # "video", "phone", "in_person"
+    meeting_link: Optional[str] = None
+    notes: Optional[str] = None
+
+class EventResponse(BaseModel):
+    id: int
+    candidate_id: int
+    title: str
+    description: Optional[str]
+    event_type: str
+    scheduled_at: str
+    duration: int
+    meeting_type: str
+    status: str
+    meeting_link: Optional[str]
+    notes: Optional[str]
+    created_at: str

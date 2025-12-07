@@ -1,0 +1,11 @@
+{
+  "candidate_id": 1,
+  "title": "Technical Interview - Frontend Role",
+  "description": "Discuss React expertise, system design, and past projects",
+  "event_type": "technical",
+  "scheduled_at": "2025-12-12T14:00:00Z",
+  "duration": 60,
+  "meeting_type": "video",
+  "meeting_link": "https://meet.google.com/abc-defg-hij",
+  "notes": "Focus on component architecture and state management"
+}

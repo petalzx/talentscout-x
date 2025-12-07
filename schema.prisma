@@ -23,6 +23,8 @@ model Candidate {
   searches       SearchResult[]
   tweets         Tweet[]
   notifications  Notification[]
+  messages       Message[]
+  events         Event[]
 
   @@map("Candidate")
 }
@@ -75,4 +77,37 @@ model Notification {
   candidate   Candidate @relation(fields: [candidateId], references: [id])
 
   @@map("Notification")
+}
+
+model Message {
+  id          Int      @id @default(autoincrement())
+  candidateId Int
+  content     String
+  senderId    String   // "recruiter" or candidate ID
+  senderType  String   // "recruiter" or "candidate"
+  messageType String   @default("text") // "text", "meeting", "assessment"
+  metadata    String?  // JSON string for meeting/assessment details
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("Message")
+}
+
+model Event {
+  id          Int      @id @default(autoincrement())
+  candidateId Int
+  title       String
+  description String?
+  eventType   String   // "phone_screen", "technical", "final", "coffee_chat", etc.
+  scheduledAt DateTime
+  duration    Int      // Duration in minutes
+  meetingType String   @default("video") // "video", "phone", "in_person"
+  status      String   @default("scheduled") // "scheduled", "completed", "cancelled"
+  meetingLink String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("Event")
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Plus, Pencil, Trash2, X, Building2, Users, Bell, Shield } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Building2, Users, Bell, Shield, Twitter } from 'lucide-react';
 import { DEFAULT_ACTIVE_ROLES, JobRole } from '../config/roles';
+import { TwitterAuth } from './TwitterAuth';
 
 export function Settings() {
     const [activeSection, setActiveSection] = useState('roles');
@@ -86,6 +87,7 @@ export function Settings() {
 
     const sections = [
         { id: 'roles', name: 'Job Roles', icon: Users },
+        { id: 'integrations', name: 'Integrations', icon: Twitter },
         { id: 'company', name: 'Company Info', icon: Building2 },
         { id: 'notifications', name: 'Notifications', icon: Bell },
         { id: 'privacy', name: 'Privacy & Security', icon: Shield },
@@ -203,6 +205,21 @@ export function Settings() {
                                 </div>
                             ))}
                         </div>
+                    </div>
+                )}
+
+                {activeSection === 'integrations' && (
+                    <div className="p-6">
+                        <h2 className="text-xl mb-2">Integrations</h2>
+                        <p className="text-sm text-gray-400 mb-6">
+                            Connect external services to enhance your recruiting workflow
+                        </p>
+
+                        <TwitterAuth
+                            onAuthSuccess={(token, username) => {
+                                console.log('Twitter authenticated:', username);
+                            }}
+                        />
                     </div>
                 )}
 

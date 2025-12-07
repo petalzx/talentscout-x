@@ -125,3 +125,34 @@ Return ONLY valid JSON:
                 await asyncio.sleep(0.5)
 
         return results
+
+    async def _make_grok_request(self, prompt: str, temperature: float = 0.7, max_tokens: int = 500) -> str:
+        """Make a direct request to Grok API and return the text response"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{settings.XAI_BASE_URL}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.XAI_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "grok-3",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": temperature,
+                        "max_tokens": max_tokens
+                    },
+                    timeout=30.0
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"]
+                    return content.strip()
+                else:
+                    print(f"Grok API error: {response.status_code}")
+                    return None
+
+        except Exception as e:
+            print(f"Error making Grok request: {e}")
+            return None
