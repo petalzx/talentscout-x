@@ -49,9 +49,9 @@ README.md (setup, iOS/React run)
 ```
 
 ## Scale & Frontend
-- **Concurrent Users**: scripts/populate.py tests 100 async scout calls (local OK; 1000+ with Postgres via Prisma DATABASE_URL).
-- **Visual Frontend**: React TS (/frontend; npm run dev) – Form → API → Ranked list + recharts bar chart (scores viz). .env.local VITE_API_URL=backend.
-- **Prisma DB**: Type-safe ORM (SQLite local; scale to Postgres free tiers like Supabase).
+- **Batch/Concurrent**: /scout limit=100+ (1 call larger data); scripts/populate.py large scale (n=10 batch=100 – 1000 users sim; Prisma fills DB 100 searches/400 candidates).
+- **Visual Frontend**: React TS (/frontend npm dev localhost:5173) – Form (role/keywords/limit) → Axios API → List + recharts charts (score bars viz model outputs). .env.local VITE_API_URL=backend.
+- **Prisma DB**: Type-safe ORM (schema.prisma SQLite local; scale DATABASE_URL=postgres:// Supabase free; migrate for prod).
 
 ## Best Practices & Extensibility
 - **Modular**: Separation for tests/maintenance (add auth? new service?).

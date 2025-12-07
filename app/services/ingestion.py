@@ -1,77 +1,91 @@
-import tweepy
-import os
+import httpx
+import urllib.parse
 from typing import List, Optional
 
 from ..config.settings import settings
 
-async def get_profiles(role_title: str, keywords: List[str], location_filter: Optional[str] = None) -> List[str]:
+async def get_profiles(role_title: str, keywords: List[str], location_filter: Optional[str] = None, limit: int = 20) -> List[str]:
     bearer_token = settings.twitter_bearer_token
     use_mock = not bearer_token or bearer_token == "your_twitter_bearer_token_here"
-    
-    profiles = []
     if use_mock:
-        print("Warning: Using mock data due to missing TWITTER_BEARER_TOKEN")
-        profiles = [
-            "@dev_guru: Experienced Backend Engineer specializing in FastAPI and scalable systems. GitHub: github.com/devguru. Location: US. Followers: 5000. Verified: True. URL: https://blog.devguru.com",
-            "@new_coder: Learning Python and web dev through #100DaysOfCode. Beginner projects on GitHub. Location: N/A. Followers: 100. Verified: False.",
-            "@senior_dev: Lead Architect at TechCorp, expert in system design and Postgres optimization. Location: US. Followers: 10000. Verified: True. Pinned: Scaling microservices with Kubernetes."
-        ]
-    else:
-        try:
-            twitter_client = tweepy.Client(bearer_token=bearer_token)
+        print("No token – Empty profiles (real only mode)")
+        return []  # No mocks – Require token
 
+    try:
+        print("Direct Bearer v2 X API (standalone app)")
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Tweets search
             query_terms = [role_title] + keywords
             query = " ".join(query_terms) + " -is:retweet lang:en"
             if location_filter:
-                # Basic tier limits geo operators; add as keyword for approx
                 query_terms.append(location_filter)
-                print(f"Note: Geo limited in free tier; added '{location_filter}' as keyword approx")
+                print(f"Geo approx '{location_filter}' keyword")
 
-            tweets_response = twitter_client.search_recent_tweets(
-                query=query,
-                max_results=20,
-                tweet_fields=["author_id", "created_at"]
-            )
-            if not tweets_response.data:
+            max_results = max(10, min(limit, 500))
+            query_enc = urllib.parse.quote(query)
+            tweets_url = f"https://api.twitter.com/2/tweets/search/recent?query={query_enc}&max_results={max_results}&tweet.fields=author_id,created_at,public_metrics"
+            tweets_resp = await client.get(tweets_url, headers=headers)
+            print(f"Tweets status: {tweets_resp.status_code}")
+            tweets_resp.raise_for_status()
+            tweets_data = tweets_resp.json()
+            tweets = tweets_data.get("data", [])
+            if not tweets:
+                print("No tweets matching")
                 return []
 
-            author_ids = list(set(tweet.author_id for tweet in tweets_response.data))
+            author_ids = list(set(tweet["author_id"] for tweet in tweets))
 
-            users_response = twitter_client.get_users(
-                ids=author_ids[:100],
-                user_fields=["description", "public_metrics", "pinned_tweet_id", "location", "url", "username", "verified", "created_at"]
-            )
-            users = users_response.data or []
+            # Users
+            profiles = []
+            if author_ids:
+                ids_str = ','.join(author_ids[:100])
+                users_url = f"https://api.twitter.com/2/users?ids={ids_str}&user.fields=description,public_metrics,pinned_tweet_id,location,url,username,verified,created_at"
+                users_resp = await client.get(users_url, headers=headers)
+                print(f"Users status: {users_resp.status_code}")
+                users_resp.raise_for_status()
+                users = users_resp.json().get("data", [])
 
-            for user in users:
-                profile_parts = [
-                    f"@{user.username}",
-                    user.description or "No bio",
-                    f"Location: {user.location or 'N/A'}",
-                    f"Followers: {user.public_metrics.get('followers_count', 0)}",
-                    f"Verified: {user.verified}",
-                    f"Joined: {user.created_at}",
-                    f"URL: {user.url or 'N/A'}"
-                ]
-                profile_text = ". ".join(p for p in profile_parts if p and p != "No bio")
+                # Top 20 large scale
+                users = sorted(users or [], key=lambda u: u.get('public_metrics', {}).get('followers_count', 0), reverse=True)[:20]
+                for user in users:
+                    profile_parts = [
+                        f"@{user['username']}",
+                        user.get('description', 'No bio'),
+                        f"Location: {user.get('location', 'N/A')}",
+                        f"Followers: {user.get('public_metrics', {}).get('followers_count', 0)}",
+                        f"Verified: {user.get('verified', False)}",
+                        f"Joined: {user.get('created_at', 'N/A')}",
+                        f"URL: {user.get('url', 'N/A')}"
+                    ]
+                    profile_text = ". ".join(p for p in profile_parts if p)
 
-                if user.pinned_tweet_id:
-                    try:
-                        pinned_response = twitter_client.get_tweet(
-                            id=user.pinned_tweet_id,
-                            tweet_fields=["text"]
-                        )
-                        if pinned_response.data:
-                            profile_text += f". Pinned Tweet: {pinned_response.data.text[:280]}..."
-                    except:
-                        pass
-                
-                if profile_text.strip():
+                    # Pinned & tweets enrich
+                    pinned_id = user.get('pinned_tweet_id')
+                    if pinned_id:
+                        pinned_url = f"https://api.twitter.com/2/tweets?ids={pinned_id}&tweet.fields=text,public_metrics"
+                        pinned_resp = await client.get(pinned_url, headers=headers)
+                        if pinned_resp.status_code == 200:
+                            pinned = pinned_resp.json().get("data", [{}])[0]
+                            pinned_text = pinned.get('text', '')[:280]
+                            likes = pinned.get('public_metrics', {}).get('like_count', 0)
+                            profile_text += f". Pinned (likes {likes}): {pinned_text}..."
+
+                    tweets_url = f"https://api.twitter.com/2/users/{user['id']}/tweets?max_results=10&tweet.fields=text,public_metrics,created_at&exclude=replies"
+                    tweets_resp = await client.get(tweets_url, headers=headers)
+                    if tweets_resp.status_code == 200:
+                        tweets = tweets_resp.json().get("data", [])
+                        tweet_summary = " ".join(t.get('text', '')[:100] for t in tweets[:5])[:500]
+                        likes_total = sum(t.get('public_metrics', {}).get('like_count', 0) for t in tweets)
+                        profile_text += f". Recent tweets (likes total {likes_total}): {tweet_summary}..."
+
                     profiles.append(profile_text)
 
-        except Exception as e:
-            print(f"Ingestion error: {e}")
-            # Fallback mock
-            profiles = ["@fallback_dev: Sample profile for demo."]
+                print(f"Large scale: {len(tweets)} tweets → {len(users)} users → {len(profiles)} enriched for Grok batch (1 LLM call)")
 
-    return profiles[:10]  # Limit for AI tokens
+    except Exception as e:
+        print(f"X API error: {e}")
+        return []  # Real only
+
+    return profiles  # Top 20 enriched (large but efficient)
+
