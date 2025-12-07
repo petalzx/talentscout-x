@@ -151,3 +151,44 @@ class TwitterService:
         except Exception as e:
             print(f"Error getting tweets for user {user_id}: {e}")
             return "No recent tweets"
+
+    async def get_recent_tweets_detailed(self, user_id: str, max_count: int = 5) -> List[dict]:
+        """Fetch recent tweets with engagement metrics for detailed profile view"""
+        try:
+            async with httpx.AsyncClient() as client:
+                params = {
+                    "max_results": max_count,
+                    "exclude": "retweets,replies",
+                    "tweet.fields": "created_at,public_metrics"
+                }
+
+                response = await client.get(
+                    f"{settings.TWITTER_BASE_URL}/users/{user_id}/tweets",
+                    headers=self.headers,
+                    params=params
+                )
+
+                if response.status_code != 200:
+                    return []
+
+                data = response.json()
+                if not data.get("data"):
+                    return []
+
+                tweets = []
+                for tweet in data["data"]:
+                    metrics = tweet.get("public_metrics", {})
+                    tweets.append({
+                        "id": tweet["id"],
+                        "content": tweet["text"],
+                        "likes": metrics.get("like_count", 0),
+                        "retweets": metrics.get("retweet_count", 0),
+                        "replies": metrics.get("reply_count", 0),
+                        "created_at": tweet.get("created_at", "")
+                    })
+
+                return tweets
+
+        except Exception as e:
+            print(f"Error getting detailed tweets for user {user_id}: {e}")
+            return []

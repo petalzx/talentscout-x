@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
-from ..models.schemas import ScoutRequest, CandidateResponse
+from ..models.schemas import ScoutRequest, CandidateResponse, DetailedCandidateResponse
 from ..services.talent_service import TalentService
 
 router = APIRouter()
@@ -28,6 +28,28 @@ async def get_all_candidates():
 
     except Exception as e:
         print(f"Get candidates endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/candidates/{candidate_id}", response_model=DetailedCandidateResponse)
+async def get_candidate_profile(candidate_id: int):
+    """Get detailed candidate profile with AI insights and recent posts"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        profile = await talent_service.get_candidate_profile(candidate_id)
+
+        await talent_service.prisma.disconnect()
+
+        if not profile:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+
+        return profile
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Get candidate profile error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/scout", response_model=List[CandidateResponse])

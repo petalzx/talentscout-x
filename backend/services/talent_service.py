@@ -1,9 +1,10 @@
-from typing import List
+from typing import List, Optional
+from datetime import datetime
 from prisma import Prisma
 from .twitter_service import TwitterService
 from .grok_service import GrokService
 from ..config.settings import settings
-from ..models.schemas import ScoutRequest, CandidateResponse
+from ..models.schemas import ScoutRequest, CandidateResponse, DetailedCandidateResponse, TweetResponse
 
 class TalentService:
     def __init__(self):
@@ -170,3 +171,89 @@ class TalentService:
             return f"{num/1000:.1f}K"
         else:
             return str(num)
+
+    async def get_candidate_profile(self, candidate_id: int) -> Optional[DetailedCandidateResponse]:
+        """Get detailed candidate profile with tweets and AI insights"""
+
+        # Get candidate with their best search result
+        candidate = await self.prisma.candidate.find_unique(
+            where={"id": candidate_id},
+            include={
+                "searches": {
+                    "include": {"session": True},
+                    "order_by": [{"score": "desc"}],
+                    "take": 1
+                }
+            }
+        )
+
+        if not candidate or not candidate.searches:
+            return None
+
+        best_result = candidate.searches[0]
+
+        # Fetch recent tweets with engagement metrics
+        # Note: We need the Twitter user ID, which we should have stored
+        # For now, we'll work with what we have in the database
+        recent_posts = []
+
+        # Extract skills from bio
+        bio_lower = candidate.bio.lower() if candidate.bio else ""
+        common_skills = ["python", "javascript", "react", "node", "aws", "docker", "kubernetes", "typescript", "go", "rust", "vue", "angular", "postgresql", "mongodb"]
+        found_skills = [skill.title() for skill in common_skills if skill in bio_lower]
+
+        # Parse AI reasoning into insights
+        insights = []
+        if best_result.reasoning:
+            # Split reasoning into bullet points if possible
+            reasoning_text = best_result.reasoning
+            # Simple heuristic: if it contains sentences, split them
+            if ". " in reasoning_text:
+                sentences = [s.strip() for s in reasoning_text.split(". ") if s.strip()]
+                insights = sentences[:3]  # Take top 3 insights
+            else:
+                insights = [reasoning_text]
+
+        # If no insights, provide default based on score
+        if not insights:
+            if best_result.score >= 70:
+                insights = [
+                    "Strong technical profile with relevant experience",
+                    "Skills align well with job requirements",
+                    "Active in technical community"
+                ]
+            elif best_result.score >= 50:
+                insights = [
+                    "Has relevant technical skills",
+                    "Some experience indicators present"
+                ]
+            else:
+                insights = ["Limited information available for assessment"]
+
+        # Mock recent posts (since we only store one tweet currently)
+        if candidate.recentTweet and candidate.recentTweet != "No recent tweets":
+            recent_posts.append(TweetResponse(
+                id="1",
+                content=candidate.recentTweet,
+                likes=0,
+                retweets=0,
+                replies=0,
+                created_at=datetime.now().isoformat()
+            ))
+
+        return DetailedCandidateResponse(
+            id=str(candidate.id),
+            name=candidate.name or candidate.handle,
+            handle=f"@{candidate.handle}",
+            avatar=candidate.avatar or "https://via.placeholder.com/100",
+            bio=candidate.bio or "No bio available",
+            followers=self._format_number(candidate.followers or 0),
+            following="0",
+            match=best_result.score,
+            tags=found_skills[:6] if found_skills else ["Developer"],
+            roles=[best_result.session.jobTitle],
+            location=None,  # Not currently stored
+            website=None,   # Not currently stored
+            insights=insights,
+            recent_posts=recent_posts
+        )

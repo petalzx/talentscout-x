@@ -32,3 +32,27 @@ class TwitterUser(BaseModel):
 class GrokScoringResult(BaseModel):
     score: int
     reasoning: str
+
+class TweetResponse(BaseModel):
+    id: str
+    content: str
+    likes: int
+    retweets: int
+    replies: int
+    created_at: str
+
+class DetailedCandidateResponse(BaseModel):
+    id: str
+    name: str
+    handle: str
+    avatar: str
+    bio: str
+    followers: str
+    following: str = "0"
+    match: int
+    tags: List[str]
+    roles: List[str]
+    location: Optional[str] = None
+    website: Optional[str] = None
+    insights: List[str]  # AI-generated reasoning points
+    recent_posts: List[TweetResponse]
