@@ -7,39 +7,38 @@ datasource db {
   url      = "file:dev.db"
 }
 
-model User {
-  id            Int       @id @default(autoincrement())
-  handle        String    @unique
-  bio           String?
-  followers     Int
-  location      String?
-  verified      Boolean   @default(false)
-  tweetsSummary String?  // Grok parsed tweet content/activity
-  createdAt     DateTime  @default(now())
-  rankings      Ranking[]
+model Candidate {
+  id        Int      @id @default(autoincrement())
+  handle    String   @unique
+  name      String?
+  bio       String?
+  followers Int?
+  avatar    String?
+  recentTweet String?
+  createdAt DateTime @default(now())
+  searches  SearchResult[]
 
-  @@map("User")
+  @@map("Candidate")
 }
 
 model SearchSession {
-  id          Int       @id @default(autoincrement())
-  roleTitle   String
-  jobDesc     String?
-  keywords    String  // Comma-separated
-  createdAt   DateTime  @default(now())
-  rankings    Ranking[]
+  id        Int      @id @default(autoincrement())
+  jobTitle  String
+  keywords  String   // comma-separated
+  createdAt DateTime @default(now())
+  results   SearchResult[]
 
   @@map("SearchSession")
 }
 
-model Ranking {
-  id         Int         @id @default(autoincrement())
-  matchScore Int
-  reasoning  String
-  userId     Int
-  sessionId  Int
-  user       User        @relation(fields: [userId], references: [id])
-  session    SearchSession @relation(fields: [sessionId], references: [id])
+model SearchResult {
+  id          Int           @id @default(autoincrement())
+  score       Int           // 1-100 from Grok
+  reasoning   String?       // optional explanation
+  candidateId Int
+  sessionId   Int
+  candidate   Candidate     @relation(fields: [candidateId], references: [id])
+  session     SearchSession @relation(fields: [sessionId], references: [id])
 
-  @@map("Ranking")
+  @@map("SearchResult")
 }
