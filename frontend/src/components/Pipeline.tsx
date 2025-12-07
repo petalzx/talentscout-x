@@ -1,17 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronRight, ChevronDown, ChevronUp, ArrowRight, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
+import axios from 'axios';
 
 interface PipelineProps {
   onSelectCandidate: (id: string) => void;
 }
 
-const jobRoles = [
-  { id: 'all', name: 'All Matches', count: 8 },
-  { id: 'senior-fe', name: 'Senior Frontend Engineer', count: 3 },
-  { id: 'backend', name: 'Backend Engineer', count: 3 },
-  { id: 'ml-eng', name: 'ML Engineer', count: 2 },
-];
+const API_BASE = 'http://localhost:8000';
 
 interface Candidate {
   id: string;
@@ -34,71 +30,95 @@ interface PipelineData {
   };
 }
 
-const pipelineData: PipelineData = {
-  'all': {
-    Qualified: [
-      { id: '1', name: 'Sarah Chen', handle: '@sarahbuilds', avatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop', role: 'Senior Frontend Engineer', match: 95 },
-      { id: '5', name: 'Jordan Lee', handle: '@jordantech', avatar: 'https://images.unsplash.com/photo-1604336732494-d8386c7029e3?w=400&h=400&fit=crop', role: 'Senior Frontend Engineer', match: 89 },
-      { id: '6', name: 'Emma Watson', handle: '@emmacodes', avatar: 'https://images.unsplash.com/photo-1620216464663-29984da34a12?w=400&h=400&fit=crop', role: 'ML Engineer', match: 91 },
-    ],
-    Screening: [
-      { id: '2', name: 'Marcus Johnson', handle: '@marcusdev', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop', role: 'Backend Engineer', match: 88 },
-      { id: '7', name: 'David Kim', handle: '@davidbuilds', avatar: 'https://images.unsplash.com/photo-1719400471588-575b23e27bd7?w=400&h=400&fit=crop', role: 'ML Engineer', match: 87 },
-    ],
-    'Round 1': [
-      { id: '3', name: 'Priya Patel', handle: '@priyacodes', avatar: 'https://images.unsplash.com/photo-1603415526960-f7e0328c63b1?w=400&h=400&fit=crop', role: 'Senior Frontend Engineer', match: 92 },
-    ],
-    'Round 2': [
-      { id: '4', name: 'Alex Rivera', handle: '@alexbuilds', avatar: 'https://images.unsplash.com/photo-1552788521-e5aca84994b5?w=400&h=400&fit=crop', role: 'Backend Engineer', match: 85 },
-    ],
-    Final: [
-      { id: '8', name: 'Sophie Turner', handle: '@sophietech', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop', role: 'Backend Engineer', match: 93 },
-    ],
-    Offer: [],
-    Rejected: [],
-  },
-  'senior-fe': {
-    Qualified: [
-      { id: '1', name: 'Sarah Chen', handle: '@sarahbuilds', avatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop', role: 'Senior Frontend Engineer', match: 95 },
-      { id: '5', name: 'Jordan Lee', handle: '@jordantech', avatar: 'https://images.unsplash.com/photo-1604336732494-d8386c7029e3?w=400&h=400&fit=crop', role: 'Senior Frontend Engineer', match: 89 },
-    ],
-    Screening: [],
-    'Round 1': [
-      { id: '3', name: 'Priya Patel', handle: '@priyacodes', avatar: 'https://images.unsplash.com/photo-1603415526960-f7e0328c63b1?w=400&h=400&fit=crop', role: 'Senior Frontend Engineer', match: 92 },
-    ],
-    'Round 2': [],
-    Final: [],
-    Offer: [],
-    Rejected: [],
-  },
-  'backend': {
-    Qualified: [],
-    Screening: [
-      { id: '2', name: 'Marcus Johnson', handle: '@marcusdev', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop', role: 'Backend Engineer', match: 88 },
-    ],
-    'Round 1': [],
-    'Round 2': [
-      { id: '4', name: 'Alex Rivera', handle: '@alexbuilds', avatar: 'https://images.unsplash.com/photo-1552788521-e5aca84994b5?w=400&h=400&fit=crop', role: 'Backend Engineer', match: 85 },
-    ],
-    Final: [
-      { id: '8', name: 'Sophie Turner', handle: '@sophietech', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop', role: 'Backend Engineer', match: 93 },
-    ],
-    Offer: [],
-    Rejected: [],
-  },
-  'ml-eng': {
-    Qualified: [
-      { id: '6', name: 'Emma Watson', handle: '@emmacodes', avatar: 'https://images.unsplash.com/photo-1620216464663-29984da34a12?w=400&h=400&fit=crop', role: 'ML Engineer', match: 91 },
-    ],
-    Screening: [
-      { id: '7', name: 'David Kim', handle: '@davidbuilds', avatar: 'https://images.unsplash.com/photo-1719400471588-575b23e27bd7?w=400&h=400&fit=crop', role: 'ML Engineer', match: 87 },
-    ],
-    'Round 1': [],
-    'Round 2': [],
-    Final: [],
-    Offer: [],
-    Rejected: [],
-  },
+// Function to randomly distribute candidates across pipeline stages
+const distributeCandidates = (candidates: any[]): PipelineData => {
+  const stages = ['Qualified', 'Screening', 'Round 1', 'Round 2', 'Final', 'Offer', 'Rejected'];
+  const stageWeights = [0.4, 0.25, 0.15, 0.1, 0.05, 0.03, 0.02]; // Higher weight for earlier stages
+
+  const result: PipelineData = {
+    all: {
+      Qualified: [],
+      Screening: [],
+      'Round 1': [],
+      'Round 2': [],
+      Final: [],
+      Offer: [],
+      Rejected: [],
+    },
+    'Senior Frontend Engineer': {
+      Qualified: [],
+      Screening: [],
+      'Round 1': [],
+      'Round 2': [],
+      Final: [],
+      Offer: [],
+      Rejected: [],
+    },
+    'Backend Engineer': {
+      Qualified: [],
+      Screening: [],
+      'Round 1': [],
+      'Round 2': [],
+      Final: [],
+      Offer: [],
+      Rejected: [],
+    },
+    'ML Engineer': {
+      Qualified: [],
+      Screening: [],
+      'Round 1': [],
+      'Round 2': [],
+      Final: [],
+      Offer: [],
+      Rejected: [],
+    },
+    'DevOps Engineer': {
+      Qualified: [],
+      Screening: [],
+      'Round 1': [],
+      'Round 2': [],
+      Final: [],
+      Offer: [],
+      Rejected: [],
+    },
+  };
+
+  // Transform candidates to match pipeline format
+  const transformedCandidates = candidates.map(candidate => ({
+    id: candidate.id,
+    name: candidate.name,
+    handle: candidate.handle,
+    avatar: candidate.avatar,
+    role: candidate.roles?.[0] || 'Developer',
+    match: candidate.match,
+  }));
+
+  // Distribute all candidates randomly
+  transformedCandidates.forEach(candidate => {
+    // Choose random stage based on weights
+    const random = Math.random();
+    let cumulative = 0;
+    let chosenStage = 'Qualified';
+
+    for (let i = 0; i < stages.length; i++) {
+      cumulative += stageWeights[i];
+      if (random <= cumulative) {
+        chosenStage = stages[i];
+        break;
+      }
+    }
+
+    // Add to all category
+    result.all[chosenStage as keyof typeof result.all].push(candidate);
+
+    // Add to role-specific category
+    const roleKey = candidate.role;
+    if (result[roleKey]) {
+      result[roleKey][chosenStage as keyof typeof result[roleKey]].push(candidate);
+    }
+  });
+
+  return result;
 };
 
 const stageOrder = ['Qualified', 'Screening', 'Round 1', 'Round 2', 'Final', 'Offer', 'Rejected'];
@@ -208,6 +228,21 @@ export function Pipeline({ onSelectCandidate }: PipelineProps) {
   const [selectedRole, setSelectedRole] = useState('all');
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [showOverview, setShowOverview] = useState(true);
+  const [pipelineData, setPipelineData] = useState<PipelineData>({
+    all: {
+      Qualified: [],
+      Screening: [],
+      'Round 1': [],
+      'Round 2': [],
+      Final: [],
+      Offer: [],
+      Rejected: [],
+    }
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [jobRoles, setJobRoles] = useState([
+    { id: 'all', name: 'All Matches', count: 0 },
+  ]);
   const [confirmationDialog, setConfirmationDialog] = useState<{
     show: boolean;
     type: 'advance' | 'reject';
@@ -222,7 +257,43 @@ export function Pipeline({ onSelectCandidate }: PipelineProps) {
     nextStage: '',
   });
 
-  const currentPipeline = pipelineData[selectedRole as keyof typeof pipelineData];
+  // Load candidates and distribute them in pipeline
+  useEffect(() => {
+    const loadCandidates = async () => {
+      try {
+        const response = await axios.get(`${API_BASE}/candidates`);
+        const candidates = response.data;
+
+        // Distribute candidates across pipeline stages
+        const distributedData = distributeCandidates(candidates);
+        setPipelineData(distributedData);
+
+        // Create job roles menu
+        const roles = [
+          { id: 'all', name: 'All Matches', count: Object.values(distributedData.all).flat().length },
+        ];
+
+        Object.keys(distributedData).forEach(role => {
+          if (role !== 'all') {
+            const roleCount = Object.values(distributedData[role]).flat().length;
+            if (roleCount > 0) {
+              roles.push({ id: role, name: role, count: roleCount });
+            }
+          }
+        });
+
+        setJobRoles(roles);
+      } catch (error) {
+        console.error('Failed to load candidates:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadCandidates();
+  }, []);
+
+  const currentPipeline = pipelineData[selectedRole as keyof typeof pipelineData] || pipelineData.all;
   const totalCandidates = Object.values(currentPipeline).flat().length;
   const selectedRoleData = jobRoles.find((r) => r.id === selectedRole);
 
@@ -273,9 +344,50 @@ export function Pipeline({ onSelectCandidate }: PipelineProps) {
         <div className="p-4 pb-3">
           <div className="flex items-center justify-between mb-1">
             <h1 className="text-xl">Recruiting Pipeline</h1>
+
+            {/* Role Filter Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowRoleDropdown(!showRoleDropdown)}
+                className="flex items-center gap-2 px-3 py-2 bg-gray-900/60 hover:bg-gray-800/80 rounded-xl border border-gray-800/50 transition-all text-sm"
+              >
+                <span>{selectedRoleData?.name || 'All Matches'}</span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {showRoleDropdown && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowRoleDropdown(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-64 bg-gray-950 border border-gray-800/50 rounded-xl overflow-hidden z-20 shadow-xl">
+                    {jobRoles.map((role) => (
+                      <button
+                        key={role.id}
+                        onClick={() => {
+                          setSelectedRole(role.id);
+                          setShowRoleDropdown(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
+                          selectedRole === role.id
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : 'text-gray-300 hover:bg-gray-900/60'
+                        }`}
+                      >
+                        <span>{role.name}</span>
+                        <span className="text-xs bg-gray-700/50 px-2 py-0.5 rounded-full">
+                          {role.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <p className="text-sm text-gray-400">
-            {totalCandidates} {totalCandidates === 1 ? 'candidate' : 'candidates'} in progress
+            {isLoading ? 'Loading candidates...' : `${totalCandidates} ${totalCandidates === 1 ? 'candidate' : 'candidates'} in progress`}
           </p>
         </div>
       </div>

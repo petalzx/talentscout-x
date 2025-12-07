@@ -110,6 +110,58 @@ class TalentService:
 
         return response_data
 
+    async def get_all_candidates(self) -> List[CandidateResponse]:
+        """Get all candidates from the database with their highest scores"""
+
+        # Get all search results with candidates, ordered by score
+        search_results = await self.prisma.searchresult.find_many(
+            include={
+                "candidate": True,
+                "session": True
+            },
+            order=[{"score": "desc"}]
+        )
+
+        # Group by candidate to get their best score
+        candidate_map = {}
+        for result in search_results:
+            candidate_id = result.candidate.id
+
+            if candidate_id not in candidate_map or result.score > candidate_map[candidate_id]["score"]:
+                candidate_map[candidate_id] = {
+                    "candidate": result.candidate,
+                    "score": result.score,
+                    "reasoning": result.reasoning,
+                    "job_title": result.session.jobTitle
+                }
+
+        # Format for response
+        response_data = []
+        for result in candidate_map.values():
+            candidate = result["candidate"]
+
+            # Extract skills from bio
+            bio_lower = candidate.bio.lower() if candidate.bio else ""
+            common_skills = ["python", "javascript", "react", "node", "aws", "docker", "kubernetes", "typescript", "go", "rust"]
+            found_skills = [skill for skill in common_skills if skill in bio_lower]
+
+            response_data.append(CandidateResponse(
+                id=str(candidate.id),
+                name=candidate.name or candidate.handle,
+                handle=f"@{candidate.handle}",
+                avatar=candidate.avatar or "https://via.placeholder.com/100",
+                bio=candidate.bio or "No bio available",
+                followers=self._format_number(candidate.followers or 0),
+                match=result["score"],
+                tags=found_skills[:4] if found_skills else ["Developer"],
+                recent_post=candidate.recentTweet or "No recent posts",
+                roles=[result["job_title"]]
+            ))
+
+        # Sort by score and return
+        response_data.sort(key=lambda x: x.match, reverse=True)
+        return response_data
+
     def _format_number(self, num: int) -> str:
         if num >= 1000000:
             return f"{num/1000000:.1f}M"

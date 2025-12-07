@@ -29,10 +29,48 @@ const API_BASE = 'http://localhost:8000';
 
 export function CandidateFeed({ onSelectCandidate }: CandidateFeedProps) {
   const [showFilters, setShowFilters] = useState(false);
+  const [showJobSearch, setShowJobSearch] = useState(false);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentJobTitle, setCurrentJobTitle] = useState<string>('');
+
+  // Load seeded data on component mount
+  useEffect(() => {
+    loadAllCandidates();
+  }, []);
+
+  const loadAllCandidates = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await axios.get(`${API_BASE}/candidates`);
+
+      // Transform API response to match frontend interface
+      const transformedCandidates = response.data.map((candidate: any) => ({
+        id: candidate.id,
+        name: candidate.name,
+        handle: candidate.handle,
+        avatar: candidate.avatar,
+        bio: candidate.bio,
+        followers: candidate.followers,
+        following: '0', // API doesn't provide following count
+        match: candidate.match,
+        tags: candidate.tags,
+        recentPost: candidate.recent_post,
+        engagement: '2.4%', // Mock engagement rate
+        roles: candidate.roles
+      }));
+
+      setCandidates(transformedCandidates);
+    } catch (err) {
+      console.error('Load candidates error:', err);
+      setError('Failed to load candidates. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSearch = async (jobTitle: string, keywords: string[]) => {
     setIsLoading(true);
@@ -53,15 +91,16 @@ export function CandidateFeed({ onSelectCandidate }: CandidateFeedProps) {
         avatar: candidate.avatar,
         bio: candidate.bio,
         followers: candidate.followers,
-        following: candidate.following || '0',
+        following: '0',
         match: candidate.match,
         tags: candidate.tags,
         recentPost: candidate.recent_post,
-        engagement: candidate.engagement,
+        engagement: '2.4%',
         roles: candidate.roles
       }));
 
       setCandidates(transformedCandidates);
+      setShowJobSearch(false); // Hide search form after successful search
     } catch (err) {
       console.error('Search error:', err);
       setError('Failed to search for candidates. Please try again.');
@@ -77,46 +116,25 @@ export function CandidateFeed({ onSelectCandidate }: CandidateFeedProps) {
         <div className="flex items-center justify-between p-6">
           <div>
             <h1 className="text-2xl mb-1">Discover Talent</h1>
-            <p className="text-sm text-gray-500">AI-matched candidates building in public</p>
+            <p className="text-sm text-gray-500">AI-matched candidates {candidates.length > 0 && `(${candidates.length} found)`}</p>
           </div>
           <div className="flex items-center gap-3">
-            {/* Job Role Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setShowJobDropdown(!showJobDropdown)}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-900/60 hover:bg-gray-800/80 rounded-xl border border-gray-800/50 transition-all"
-              >
-                <span className="text-sm">{selectedJob?.name}</span>
-                <Filter className="w-4 h-4" />
-              </button>
+            {/* Search Button */}
+            <button
+              onClick={() => setShowJobSearch(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-xl border border-blue-500/30 transition-all"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span className="text-sm">New Search</span>
+            </button>
 
-              {/* Dropdown Menu */}
-              {showJobDropdown && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowJobDropdown(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-64 bg-gray-950 border border-gray-800/50 rounded-xl overflow-hidden z-20 shadow-xl">
-                    {jobOptions.map((job) => (
-                      <button
-                        key={job.id}
-                        onClick={() => {
-                          setActiveJobFilter(job.id);
-                          setShowJobDropdown(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${activeJobFilter === job.id
-                          ? 'bg-blue-500/20 text-blue-400'
-                          : 'text-gray-300 hover:bg-gray-900/60'
-                          }`}
-                      >
-                        <span>{job.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+            {/* Refresh Button */}
+            <button
+              onClick={loadAllCandidates}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-900/60 hover:bg-gray-800/80 rounded-xl border border-gray-800/50 transition-all"
+            >
+              <span className="text-sm">All Candidates</span>
+            </button>
 
             {/* Advanced Filters Button */}
             <button
@@ -129,16 +147,47 @@ export function CandidateFeed({ onSelectCandidate }: CandidateFeedProps) {
         </div>
       </div>
 
-      {/* Candidates Feed */}
+      {/* Job Search Results Header */}
+      {currentJobTitle && (
+        <div className="px-6 py-3 bg-gray-900/30 border-b border-gray-800/50">
+          <p className="text-sm text-gray-400">
+            Search results for: <span className="text-blue-400 font-medium">{currentJobTitle}</span>
+          </p>
+        </div>
+      )}
+
+      {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {filteredCandidates.map((candidate) => (
-          <CandidateCard
-            key={candidate.id}
-            candidate={candidate}
-            onClick={() => onSelectCandidate(candidate.id)}
-          />
-        ))}
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-gray-400">Loading candidates...</div>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-red-400">{error}</div>
+          </div>
+        ) : candidates.length === 0 ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-gray-400">No candidates found</div>
+          </div>
+        ) : (
+          candidates.map((candidate) => (
+            <CandidateCard
+              key={candidate.id}
+              candidate={candidate}
+              onClick={() => onSelectCandidate(candidate.id)}
+            />
+          ))
+        )}
       </div>
+
+      {/* Job Search Modal */}
+      {showJobSearch && (
+        <JobSearchForm
+          onSearch={handleSearch}
+          onClose={() => setShowJobSearch(false)}
+        />
+      )}
 
       {/* Filter Modal */}
       {showFilters && <FilterModal onClose={() => setShowFilters(false)} />}
