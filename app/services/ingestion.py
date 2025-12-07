@@ -22,8 +22,10 @@ async def get_profiles(role_title: str, keywords: List[str], location_filter: Op
 
             query_terms = [role_title] + keywords
             query = " ".join(query_terms) + " -is:retweet lang:en"
-            if location_filter == "US":
-                query += " place_country:US"
+            if location_filter:
+                # Basic tier limits geo operators; add as keyword for approx
+                query_terms.append(location_filter)
+                print(f"Note: Geo limited in free tier; added '{location_filter}' as keyword approx")
 
             tweets_response = twitter_client.search_recent_tweets(
                 query=query,

@@ -4,7 +4,8 @@ from typing import List
 from ..models.scout import ScoutRequest, CandidateMatch
 from ..services.ingestion import get_profiles
 from ..services.ai_service import rank_candidates
-import aiosqlite
+from prisma import Prisma
+from ..db.database import prisma as prisma_client  # Global Prisma client
 from ..db.database import DB_PATH  # But since settings, wait
 from ..config.settings import settings
 
