@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { CandidateFeed } from './components/CandidateFeed';
 import { CandidateProfile } from './components/CandidateProfile';
 import { Pipeline } from './components/Pipeline';
@@ -47,7 +47,10 @@ export default function App() {
         {/* Navigation */}
         <nav className="flex-1 p-4">
           <button
-            onClick={() => setActiveTab('discover')}
+            onClick={() => {
+              setActiveTab('discover');
+              setSelectedCandidate(null);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all mb-2 ${
               activeTab === 'discover'
                 ? 'bg-gradient-to-r from-blue-500/20 to-blue-500/10 text-blue-400 border border-blue-500/30'
@@ -59,7 +62,10 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setActiveTab('pipeline')}
+            onClick={() => {
+              setActiveTab('pipeline');
+              setSelectedCandidate(null);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all mb-2 ${
               activeTab === 'pipeline'
                 ? 'bg-gradient-to-r from-blue-500/20 to-blue-500/10 text-blue-400 border border-blue-500/30'
@@ -72,7 +78,10 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setActiveTab('messages')}
+            onClick={() => {
+              setActiveTab('messages');
+              setSelectedCandidate(null);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all mb-2 ${
               activeTab === 'messages'
                 ? 'bg-gradient-to-r from-blue-500/20 to-blue-500/10 text-blue-400 border border-blue-500/30'
