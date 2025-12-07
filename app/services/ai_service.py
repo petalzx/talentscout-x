@@ -1,4 +1,4 @@
-from openai import OpenAI
+import httpx
 import json
 from typing import List, Dict, Any
 
@@ -31,10 +31,8 @@ Output EXACTLY this JSON format, nothing else:
 }"""
 
 async def rank_candidates(request: ScoutRequest, profiles: List[str]) -> List[Dict[str, Any]]:
-    ai_client = OpenAI(
-        api_key=settings.xai_api_key,
-        base_url=settings.xai_base_url
-    )
+    if not settings.xai_api_key:
+        raise ValueError("XAI_API_KEY required for Grok calls")
 
     user_prompt = f"""Job Role: {request.role_title}
 Keywords to match: {', '.join(request.keywords)}
@@ -50,25 +48,37 @@ Profiles to evaluate (rank all):
         {"role": "user", "content": user_prompt}
     ]
 
-    try:
-        response = ai_client.chat.completions.create(
-            model=settings.xai_model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.2,
-            max_tokens=2000
-        )
+    payload = {
+        "model": settings.xai_model,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": 2000,
+        "response_format": {"type": "json_object"}
+    }
 
-        ai_content = response.choices[0].message.content.strip()
-        ai_json = json.loads(ai_content)
-        candidates_data = ai_json.get("candidates", [])
-        
-        # Fallback if empty
-        if not candidates_data:
-            candidates_data = [
-                {"handle": "@fallback", "match_score": 50, "reasoning": "Mock due to AI error."}
-            ]
-        return candidates_data
+    headers = {
+        "Authorization": f"Bearer {settings.xai_api_key}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{settings.xai_base_url}/chat/completions",
+                headers=headers,
+                json=payload
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            ai_content = data["choices"][0]["message"]["content"].strip()
+            ai_json = json.loads(ai_content)
+            candidates_data = ai_json.get("candidates", [])
+            
+            if not candidates_data:
+                candidates_data = [
+                    {"handle": "@fallback", "match_score": 50, "reasoning": "Mock due to AI error."}
+                ]
+            return candidates_data
     except Exception as e:
-        print(f"AI ranking error: {e}")
+        print(f"Grok API error: {e}")
         return [{"handle": "@error", "match_score": 0, "reasoning": str(e)}]
