@@ -6,8 +6,8 @@ class Settings(BaseSettings):
     xai_api_key: str
     twitter_bearer_token: Optional[str] = None
     twitter_user_access_token: Optional[str] = None  # /2/users/search OAuth2 user (PKCE flow)
-    twitter_client_id: Optional[str] = None  # OAuth2 for PKCE (app OAuth2 tab)
-    twitter_client_secret: Optional[str] = None
+    twitter_client_id: str  # OAuth2 PKCE Client ID (app settings OAuth 2.0 tab – Required for user token flow)
+    twitter_client_secret: Optional[str] = None  # Client Secret (confidential client)
     database_path: str = "dev.db"
     project_name: str = "TalentScout X"
     version: str = "0.1.0"

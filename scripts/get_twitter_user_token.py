@@ -3,8 +3,8 @@ from xdk import Client  # pip install xdk-python or equivalent? Wait, pasted xdk
 # Simplified OAuth2 PKCE for user token (pasted thread code)
 # Run to authorize browser, get token for .env TWITTER_USER_ACCESS_TOKEN
 
-CLIENT_ID = os.getenv('TWITTER_CLIENT_ID') or input("Enter CLIENT_ID from app OAuth2 tab: ")
-CLIENT_SECRET = os.getenv('TWITTER_CLIENT_SECRET') or input("Enter CLIENT_SECRET: ")
+CLIENT_ID = os.getenv('TWITTER_CLIENT_ID') or input("CLIENT_ID (app OAuth2 tab): ")
+CLIENT_SECRET = os.getenv('TWITTER_CLIENT_SECRET') or input("CLIENT_SECRET (confidential type): ")
 REDIRECT_URI = "https://console.x.com"  # Or local http://localhost:3000/callback – Match app callback URL
 
 scopes = ["tweet.read", "users.read", "bookmark.read", "offline.access"]
