@@ -130,16 +130,17 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
         {/* Cover & Avatar */}
         <div className="relative">
           {profile.header_image ? (
-            <div className="h-28 relative overflow-hidden bg-gray-900">
+            <div className="relative overflow-hidden bg-gray-900" style={{ height: '88px' }}>
               <img
                 src={profile.header_image}
                 alt={`${profile.name} header`}
-                className="w-full h-full object-cover"
+                className="w-full min-h-full object-cover object-center"
+                style={{ objectPosition: 'center 30%' }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
             </div>
           ) : (
-            <div className="h-28 bg-gradient-to-br from-blue-600 via-blue-500 to-purple-600 relative overflow-hidden">
+            <div className="bg-gradient-to-br from-blue-600 via-blue-500 to-purple-600 relative overflow-hidden" style={{ height: '88px' }}>
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
             </div>
           )}
