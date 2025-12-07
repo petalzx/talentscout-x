@@ -35,14 +35,15 @@ async def rank_candidates(request: ScoutRequest, profiles: List[str]) -> List[Di
         raise ValueError("XAI_API_KEY required for Grok calls")
 
     user_prompt = f"""Job Role: {request.role_title}
+Job Description: {request.job_desc or 'Match keywords/role expertise'}
 Keywords to match: {', '.join(request.keywords)}
 Location preference: {request.location_filter or 'Any'}
 
-Top profiles with tweet content for deep score (rank top 20 by fit; use posts for activity/expertise):
+Evaluate fit to job desc using bio/tweets content (skills/experience/activity vs desc; rank top 20 by match_score 0-100, reasoning on posts/parsing):
 
 """
     for i, profile in enumerate(profiles[:20], 1):  # Top 20 enriched
-        user_prompt += f"\n{i}. {profile}"  # Includes tweet summary for content analysis
+        user_prompt += f"\n{i}. {profile}"  # Bio + tweet content for parsing/deep fit
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
