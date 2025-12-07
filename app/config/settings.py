@@ -5,6 +5,9 @@ import os
 class Settings(BaseSettings):
     xai_api_key: str
     twitter_bearer_token: Optional[str] = None
+    twitter_user_access_token: Optional[str] = None  # /2/users/search OAuth2 user (PKCE flow)
+    twitter_client_id: Optional[str] = None  # OAuth2 for PKCE (app OAuth2 tab)
+    twitter_client_secret: Optional[str] = None
     database_path: str = "dev.db"
     project_name: str = "TalentScout X"
     version: str = "0.1.0"

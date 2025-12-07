@@ -1,6 +1,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.31.1
-prisma==0.15.0  # ORM for type-safe DB
+prisma==0.15.0  # ORM
+tweepy==4.16.0  # For OAuth2 user context fallback (/2/users/search)
 
 httpx==0.27.2
 python-dotenv==1.0.1
