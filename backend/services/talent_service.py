@@ -39,13 +39,14 @@ class TalentService:
             "keywords": ",".join(request.keywords)
         })
 
-        # 4. Score candidates with Grok
-        results = []
-        for user in limited_users:
-            print(f"Scoring candidate: {user.username}")
+        # 4. Score candidates with Grok (in parallel batches)
+        print(f"Scoring {len(limited_users)} candidates in parallel...")
+        scoring_results = await self.grok_service.score_candidates_batch(request.job_title, limited_users, batch_size=5)
 
-            # Score with Grok
-            scoring_result = await self.grok_service.score_candidate(request.job_title, user)
+        # 5. Save all candidates and results
+        results = []
+        for user, scoring_result in zip(limited_users, scoring_results):
+            print(f"Saving candidate: {user.username} (score: {scoring_result.score})")
 
             # Save candidate to database
             candidate = await self.prisma.candidate.upsert(
@@ -57,6 +58,7 @@ class TalentService:
                         "bio": user.description,
                         "followers": user.followers_count,
                         "avatar": user.profile_image_url,
+                        "headerImage": user.profile_banner_url or None,
                         "recentTweet": user.recent_tweet
                     },
                     "update": {
@@ -64,6 +66,7 @@ class TalentService:
                         "bio": user.description,
                         "followers": user.followers_count,
                         "avatar": user.profile_image_url,
+                        "headerImage": user.profile_banner_url or None,
                         "recentTweet": user.recent_tweet
                     }
                 }
@@ -254,6 +257,7 @@ class TalentService:
             roles=[best_result.session.jobTitle],
             location=None,  # Not currently stored
             website=None,   # Not currently stored
+            header_image=candidate.headerImage,  # Now fetched from database
             insights=insights,
             recent_posts=recent_posts
         )

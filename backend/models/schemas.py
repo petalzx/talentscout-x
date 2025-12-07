@@ -27,6 +27,7 @@ class TwitterUser(BaseModel):
     description: str = ""
     followers_count: int = 0
     profile_image_url: str = ""
+    profile_banner_url: str = ""
     recent_tweet: str = ""
 
 class GrokScoringResult(BaseModel):
@@ -54,5 +55,6 @@ class DetailedCandidateResponse(BaseModel):
     roles: List[str]
     location: Optional[str] = None
     website: Optional[str] = None
+    header_image: Optional[str] = None
     insights: List[str]  # AI-generated reasoning points
     recent_posts: List[TweetResponse]

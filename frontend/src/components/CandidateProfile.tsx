@@ -1,5 +1,5 @@
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Mail, MessageCircle, Star, TrendingUp, ExternalLink } from 'lucide-react';
-import { useState, useEffect } from 'react';
 import { ScheduleModal } from './ScheduleModal';
 import axios from 'axios';
 
@@ -8,6 +8,7 @@ const API_BASE = 'http://localhost:8000';
 interface CandidateProfileProps {
   candidateId: string;
   onBack: () => void;
+  onNavigateToMessages: (candidateId: string) => void;
 }
 
 interface TweetData {
@@ -32,11 +33,12 @@ interface ProfileData {
   roles: string[];
   location?: string;
   website?: string;
+  header_image?: string;
   insights: string[];
   recent_posts: TweetData[];
 }
 
-export function CandidateProfile({ candidateId, onBack }: CandidateProfileProps) {
+export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: CandidateProfileProps) {
   const [showSchedule, setShowSchedule] = useState(false);
   const [pipelineStage, setPipelineStage] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -127,9 +129,20 @@ export function CandidateProfile({ candidateId, onBack }: CandidateProfileProps)
       <div className="flex-1 overflow-y-auto">
         {/* Cover & Avatar */}
         <div className="relative">
-          <div className="h-28 bg-gradient-to-br from-blue-600 via-blue-500 to-purple-600 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
-          </div>
+          {profile.header_image ? (
+            <div className="h-28 relative overflow-hidden bg-gray-900">
+              <img
+                src={profile.header_image}
+                alt={`${profile.name} header`}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+            </div>
+          ) : (
+            <div className="h-28 bg-gradient-to-br from-blue-600 via-blue-500 to-purple-600 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+            </div>
+          )}
           <img
             src={profile.avatar}
             alt={profile.name}
@@ -145,11 +158,11 @@ export function CandidateProfile({ candidateId, onBack }: CandidateProfileProps)
           >
             <Calendar className="w-4 h-4" />
           </button>
-          <button className="p-2 border border-gray-700/50 rounded-xl hover:bg-gray-900/60 transition-all bg-gray-900/40">
+          <button
+            onClick={() => onNavigateToMessages(candidateId)}
+            className="p-2 border border-gray-700/50 rounded-xl hover:bg-gray-900/60 transition-all bg-gray-900/40"
+          >
             <Mail className="w-4 h-4" />
-          </button>
-          <button className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all shadow-lg shadow-blue-500/20">
-            Message
           </button>
         </div>
 

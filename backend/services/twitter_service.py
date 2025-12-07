@@ -79,7 +79,7 @@ class TwitterService:
                     "query": query,
                     "max_results": min(max_results, 100),
                     "expansions": "author_id",
-                    "user.fields": "public_metrics,description,profile_image_url,name,username"
+                    "user.fields": "public_metrics,description,profile_image_url,profile_banner_url,name,username"
                 }
 
                 response = await client.get(
@@ -109,6 +109,7 @@ class TwitterService:
                         description=user.get("description", ""),
                         followers_count=user.get("public_metrics", {}).get("followers_count", 0),
                         profile_image_url=user.get("profile_image_url", ""),
+                        profile_banner_url=user.get("profile_banner_url", ""),
                     )
 
                     # Apply pre-filtering

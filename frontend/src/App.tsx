@@ -9,10 +9,23 @@ import grokLogo from 'figma:asset/868077ec40f63747e6a75dda0a2da91f91b9a516.png';
 export default function App() {
   const [activeTab, setActiveTab] = useState('discover');
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
+  const [messagesCandidateId, setMessagesCandidateId] = useState<string | null>(null);
+
+  const handleNavigateToMessages = (candidateId: string) => {
+    setMessagesCandidateId(candidateId);
+    setSelectedCandidate(null);
+    setActiveTab('messages');
+  };
 
   const renderContent = () => {
     if (selectedCandidate) {
-      return <CandidateProfile candidateId={selectedCandidate} onBack={() => setSelectedCandidate(null)} />;
+      return (
+        <CandidateProfile
+          candidateId={selectedCandidate}
+          onBack={() => setSelectedCandidate(null)}
+          onNavigateToMessages={handleNavigateToMessages}
+        />
+      );
     }
 
     switch (activeTab) {
@@ -21,7 +34,13 @@ export default function App() {
       case 'pipeline':
         return <Pipeline onSelectCandidate={setSelectedCandidate} />;
       case 'messages':
-        return <Messages onSelectCandidate={setSelectedCandidate} />;
+        return (
+          <Messages
+            onSelectCandidate={setSelectedCandidate}
+            openConversationId={messagesCandidateId}
+            onConversationOpened={() => setMessagesCandidateId(null)}
+          />
+        );
       default:
         return <CandidateFeed onSelectCandidate={setSelectedCandidate} />;
     }

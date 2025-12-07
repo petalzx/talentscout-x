@@ -8,15 +8,16 @@ datasource db {
 }
 
 model Candidate {
-  id        Int      @id @default(autoincrement())
-  handle    String   @unique
-  name      String?
-  bio       String?
-  followers Int?
-  avatar    String?
+  id          Int      @id @default(autoincrement())
+  handle      String   @unique
+  name        String?
+  bio         String?
+  followers   Int?
+  avatar      String?
+  headerImage String?
   recentTweet String?
-  createdAt DateTime @default(now())
-  searches  SearchResult[]
+  createdAt   DateTime @default(now())
+  searches    SearchResult[]
 
   @@map("Candidate")
 }

@@ -289,9 +289,11 @@ const internalConversations: Conversation[] = [
 
 interface MessagesProps {
   onSelectCandidate: (candidateId: string) => void;
+  openConversationId?: string | null;
+  onConversationOpened?: () => void;
 }
 
-export function Messages({ onSelectCandidate }: MessagesProps) {
+export function Messages({ onSelectCandidate, openConversationId, onConversationOpened }: MessagesProps) {
   const [activeTab, setActiveTab] = useState<MessageTab>('candidates');
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messageText, setMessageText] = useState('');
@@ -374,6 +376,63 @@ export function Messages({ onSelectCandidate }: MessagesProps) {
 
     loadCandidates();
   }, []);
+
+  // Auto-open conversation when navigating from profile
+  useEffect(() => {
+    const openOrCreateConversation = async () => {
+      if (!openConversationId || isLoadingCandidates) return;
+
+      // First check if conversation already exists
+      let conversation = realCandidateConversations.find((conv) => conv.id === openConversationId);
+
+      // If not, fetch the candidate and create a new conversation
+      if (!conversation) {
+        try {
+          const response = await axios.get(`${API_BASE}/candidates/${openConversationId}`);
+          const candidate = response.data;
+
+          // Create new conversation object
+          conversation = {
+            id: candidate.id,
+            name: candidate.name,
+            handle: candidate.handle,
+            avatar: candidate.avatar,
+            role: candidate.roles?.[0] || 'Developer',
+            lastMessage: '',
+            timestamp: 'Just now',
+            unread: false,
+            messages: [
+              {
+                id: '1',
+                senderId: 'recruiter',
+                text: `Hi ${candidate.name.split(' ')[0]}! I came across your profile and was impressed by your background. I'd love to discuss potential opportunities with you.`,
+                timestamp: 'Just now',
+                type: 'text',
+              }
+            ],
+          };
+
+          // Add to conversations list
+          setRealCandidateConversations((prev) => [conversation!, ...prev]);
+        } catch (error) {
+          console.error('Failed to fetch candidate for conversation:', error);
+          if (onConversationOpened) {
+            onConversationOpened();
+          }
+          return;
+        }
+      }
+
+      // Open the conversation
+      setSelectedConversation(conversation);
+      setActiveTab('candidates');
+      if (onConversationOpened) {
+        onConversationOpened();
+      }
+    };
+
+    openOrCreateConversation();
+  }, [openConversationId, realCandidateConversations, isLoadingCandidates, onConversationOpened]);
 
   const currentConversations = activeTab === 'candidates'
     ? (isLoadingCandidates ? [] : realCandidateConversations)

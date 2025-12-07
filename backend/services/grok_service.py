@@ -1,5 +1,7 @@
 import httpx
 import json
+import asyncio
+from typing import List
 from ..config.settings import settings
 from ..models.schemas import GrokScoringResult, TwitterUser
 
@@ -18,40 +20,40 @@ Bio: {user.description}
 Followers: {user.followers_count}
 Recent Tweet: {user.recent_tweet}
 
-EVALUATION CRITERIA:
+EVALUATION CRITERIA (be generous and look for potential):
 1. Technical Skills Match (0-40 points):
-   - Does bio explicitly mention relevant technologies for {job_title}?
-   - Are there specific technical skills listed (languages, frameworks, tools)?
-   - Quality over quantity - relevant skills score higher
+   - Does bio mention ANY relevant technologies or programming languages?
+   - Look for keywords like: developer, engineer, programmer, coder, tech
+   - Award points for general technical background even if not exact match
 
 2. Professional Experience (0-30 points):
-   - Does bio indicate professional developer/engineer role?
-   - Any seniority indicators (senior, lead, staff, principal)?
-   - Years of experience mentioned?
-   - Company names or notable projects?
+   - Does bio indicate they work in tech/software?
+   - Any job titles related to software development?
+   - Active in tech community (follows tech topics, tweets about code)?
 
 3. Profile Quality (0-15 points):
-   - Complete, professional bio (not generic/casual)?
-   - Links to GitHub, portfolio, website?
-   - Active account with recent technical content?
+   - Has a complete bio (even if brief)?
+   - Reasonable follower count (50+)?
+   - Recent activity shows engagement
 
-4. Relevance to Role (0-15 points):
-   - Is this person actually doing the type of work needed?
-   - Do recent tweets show technical discussions/work?
-   - Would they realistically be interested in this role?
+4. Role Relevance (0-15 points):
+   - Could this person be interested in a {job_title} role?
+   - Do they have transferable skills?
+   - Is their background adjacent to this role?
 
-SCORING GUIDELINES:
-- 80-100: Perfect match - explicitly qualified senior professional
-- 60-79: Strong match - clearly qualified with relevant experience
-- 40-59: Moderate match - some qualifications but gaps
-- 20-39: Weak match - minimal qualifications or unclear fit
-- 0-19: Poor match - no clear qualifications or wrong field
+SCORING GUIDELINES (be more generous):
+- 85-100: Excellent match - strong qualifications and experience
+- 70-84: Very good match - clearly qualified with relevant skills
+- 55-69: Good match - solid technical background
+- 40-54: Moderate match - some relevant experience
+- 25-39: Possible match - junior or learning
+- 0-24: Poor match - no clear technical background
 
-BE STRICT: Most candidates should score 20-50. Only exceptional matches score above 70.
-Penalize heavily for: non-English bios, no tech keywords, generic bios, irrelevant content.
+AIM FOR BALANCE: Score candidates fairly. Most qualified candidates should score 60-85.
+Give higher scores to anyone with clear technical skills and relevant experience.
 
 Return ONLY valid JSON:
-{{"score": <0-100>, "reasoning": "<concise explanation of score>"}}"""
+{{"score": <0-100>, "reasoning": "<concise 1-2 sentence explanation>"}}"""
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -96,3 +98,30 @@ Return ONLY valid JSON:
                 score=50,
                 reasoning=f"Error: {str(e)}"
             )
+
+    async def score_candidates_batch(self, job_title: str, users: List[TwitterUser], batch_size: int = 5) -> List[GrokScoringResult]:
+        """Score multiple candidates in parallel batches for better performance"""
+        results = []
+
+        # Process in batches to avoid overwhelming the API
+        for i in range(0, len(users), batch_size):
+            batch = users[i:i + batch_size]
+            print(f"Scoring batch {i//batch_size + 1} ({len(batch)} candidates)...")
+
+            # Score all candidates in this batch concurrently
+            batch_tasks = [self.score_candidate(job_title, user) for user in batch]
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+
+            # Handle any exceptions
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    print(f"Batch scoring error: {result}")
+                    results.append(GrokScoringResult(score=50, reasoning="Batch error"))
+                else:
+                    results.append(result)
+
+            # Small delay between batches to be nice to the API
+            if i + batch_size < len(users):
+                await asyncio.sleep(0.5)
+
+        return results

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Filter, Sparkles } from 'lucide-react';
 import { CandidateCard } from './CandidateCard';
 import { FilterModal } from './FilterModal';
