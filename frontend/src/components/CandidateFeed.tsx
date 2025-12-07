@@ -204,66 +204,60 @@ export function CandidateFeed({ onSelectCandidate }: CandidateFeedProps) {
                   <div className="py-1">
                     <button
                       onClick={() => filterByMatch('all')}
-                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                        selectedMatchFilter === 'all'
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${selectedMatchFilter === 'all'
                           ? 'bg-blue-500/20 text-blue-400'
                           : 'hover:bg-gray-800/60 text-gray-300'
-                      }`}
+                        }`}
                     >
                       All Matches
                     </button>
                     <div className="border-t border-gray-800 my-1"></div>
                     <button
                       onClick={() => filterByMatch('90+')}
-                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                        selectedMatchFilter === '90+'
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${selectedMatchFilter === '90+'
                           ? 'bg-blue-500/20 text-blue-400'
                           : 'hover:bg-gray-800/60 text-gray-300'
-                      }`}
+                        }`}
                     >
                       <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-2"></span>
                       Excellent Match (90+)
                     </button>
                     <button
                       onClick={() => filterByMatch('80-89')}
-                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                        selectedMatchFilter === '80-89'
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${selectedMatchFilter === '80-89'
                           ? 'bg-blue-500/20 text-blue-400'
                           : 'hover:bg-gray-800/60 text-gray-300'
-                      }`}
+                        }`}
                     >
                       <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
                       Great Match (80-89)
                     </button>
                     <button
                       onClick={() => filterByMatch('70-79')}
-                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                        selectedMatchFilter === '70-79'
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${selectedMatchFilter === '70-79'
                           ? 'bg-blue-500/20 text-blue-400'
                           : 'hover:bg-gray-800/60 text-gray-300'
-                      }`}
+                        }`}
                     >
                       <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 mr-2"></span>
                       Good Match (70-79)
                     </button>
                     <button
                       onClick={() => filterByMatch('60-69')}
-                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                        selectedMatchFilter === '60-69'
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${selectedMatchFilter === '60-69'
                           ? 'bg-blue-500/20 text-blue-400'
                           : 'hover:bg-gray-800/60 text-gray-300'
-                      }`}
+                        }`}
                     >
                       <span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-2"></span>
                       Fair Match (60-69)
                     </button>
                     <button
                       onClick={() => filterByMatch('below-60')}
-                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                        selectedMatchFilter === 'below-60'
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${selectedMatchFilter === 'below-60'
                           ? 'bg-blue-500/20 text-blue-400'
                           : 'hover:bg-gray-800/60 text-gray-300'
-                      }`}
+                        }`}
                     >
                       <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-2"></span>
                       Below 60

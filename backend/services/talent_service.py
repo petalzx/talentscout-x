@@ -1,5 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
+import json
 from prisma import Prisma
 from .twitter_service import TwitterService
 from .grok_service import GrokService
@@ -527,11 +528,13 @@ class TalentService:
                 "senderType": request.sender_type,
                 "messageType": request.message_type,
                 "metadata": request.metadata,
-                "isRead": False
+                "isRead": False,
+                "isInternal": request.is_internal
             })
 
             # Generate AI response (100% chance for demo - always respond in real-time)
-            if request.sender_type == "recruiter":
+            # Only generate AI responses for non-internal recruiter messages
+            if request.sender_type == "recruiter" and not request.is_internal:
                 # Get candidate info and conversation history
                 candidate = await self.prisma.candidate.find_unique(
                     where={"id": request.candidate_id}
@@ -575,6 +578,7 @@ class TalentService:
                 "message_type": message.messageType,
                 "metadata": message.metadata,
                 "is_read": message.isRead,
+                "is_internal": message.isInternal,
                 "created_at": message.createdAt.isoformat()
             }
 
@@ -700,6 +704,7 @@ Your response:"""
                     "message_type": msg.messageType,
                     "metadata": msg.metadata,
                     "is_read": msg.isRead,
+                    "is_internal": msg.isInternal,
                     "created_at": msg.createdAt.isoformat()
                 }
                 for msg in messages
@@ -727,6 +732,16 @@ Your response:"""
                 print(f"Candidate {request.candidate_id} not found")
                 return None
 
+            # Get interviewer info if assigned
+            interviewer_name = None
+            interviewer_role = None
+            if request.assigned_interviewer_id:
+                from ..config.userPersonas import USER_PERSONAS
+                interviewer = next((p for p in USER_PERSONAS if p['id'] == request.assigned_interviewer_id), None)
+                if interviewer:
+                    interviewer_name = interviewer['name'].replace('You (', '').replace(')', '')
+                    interviewer_role = interviewer['role']
+
             # Create the event in database
             event = await self.prisma.event.create({
                 "candidateId": request.candidate_id,
@@ -738,7 +753,10 @@ Your response:"""
                 "meetingType": request.meeting_type,
                 "meetingLink": request.meeting_link,
                 "notes": request.notes,
-                "status": "scheduled"
+                "status": "scheduled",
+                "assignedInterviewerId": request.assigned_interviewer_id,
+                "assignedInterviewerName": interviewer_name,
+                "assignedInterviewerRole": interviewer_role
             })
 
             # Generate calendar invite (.ics file content)
@@ -800,6 +818,9 @@ Your response:"""
                 "status": event.status,
                 "meeting_link": event.meetingLink,
                 "notes": event.notes,
+                "assigned_interviewer_id": event.assignedInterviewerId,
+                "assigned_interviewer_name": event.assignedInterviewerName,
+                "assigned_interviewer_role": event.assignedInterviewerRole,
                 "created_at": event.createdAt.isoformat(),
                 "calendar_invite_sent": True
             }
@@ -831,6 +852,9 @@ Your response:"""
                     "status": evt.status,
                     "meeting_link": evt.meetingLink,
                     "notes": evt.notes,
+                    "assigned_interviewer_id": evt.assignedInterviewerId,
+                    "assigned_interviewer_name": evt.assignedInterviewerName,
+                    "assigned_interviewer_role": evt.assignedInterviewerRole,
                     "created_at": evt.createdAt.isoformat()
                 }
                 for evt in events
@@ -868,6 +892,9 @@ Your response:"""
                     "status": evt.status,
                     "meeting_link": evt.meetingLink,
                     "notes": evt.notes,
+                    "assigned_interviewer_id": evt.assignedInterviewerId,
+                    "assigned_interviewer_name": evt.assignedInterviewerName,
+                    "assigned_interviewer_role": evt.assignedInterviewerRole,
                     "created_at": evt.createdAt.isoformat()
                 }
                 for evt in events
@@ -876,3 +903,366 @@ Your response:"""
         except Exception as e:
             print(f"Error getting all events: {e}")
             return []
+
+    async def create_feedback(self, request):
+        """Create interview feedback for a candidate"""
+        try:
+            feedback = await self.prisma.feedback.create({
+                "candidateId": request.candidate_id,
+                "interviewerId": request.interviewer_id,
+                "interviewerName": request.interviewer_name,
+                "interviewerRole": request.interviewer_role,
+                "interviewerAvatar": request.interviewer_avatar,
+                "stage": request.stage,
+                "rating": request.rating,
+                "recommendation": request.recommendation,
+                "technicalSkills": request.technical_skills,
+                "communication": request.communication,
+                "cultureFit": request.culture_fit,
+                "comments": request.comments,
+                "strengths": json.dumps(request.strengths),
+                "concerns": json.dumps(request.concerns)
+            })
+
+            return {
+                "id": feedback.id,
+                "candidate_id": feedback.candidateId,
+                "interviewer_id": feedback.interviewerId,
+                "interviewer_name": feedback.interviewerName,
+                "interviewer_role": feedback.interviewerRole,
+                "interviewer_avatar": feedback.interviewerAvatar,
+                "stage": feedback.stage,
+                "rating": feedback.rating,
+                "recommendation": feedback.recommendation,
+                "technical_skills": feedback.technicalSkills,
+                "communication": feedback.communication,
+                "culture_fit": feedback.cultureFit,
+                "comments": feedback.comments,
+                "strengths": json.loads(feedback.strengths),
+                "concerns": json.loads(feedback.concerns),
+                "created_at": feedback.createdAt.isoformat()
+            }
+
+        except Exception as e:
+            print(f"Error creating feedback: {e}")
+            return None
+
+    async def get_candidates_with_feedback(self):
+        """Get all candidates that have received feedback"""
+        try:
+            # Get all candidates with feedback
+            candidates = await self.prisma.candidate.find_many(
+                where={"feedback": {"some": {}}},
+                include={"feedback": True, "searches": True}
+            )
+
+            result = []
+            for candidate in candidates:
+                if not candidate.feedback:
+                    continue
+
+                # Calculate average rating
+                total_rating = sum(f.rating for f in candidate.feedback)
+                avg_rating = total_rating / len(candidate.feedback) if candidate.feedback else 0
+
+                # Get most common recommendation
+                recommendations = {}
+                for f in candidate.feedback:
+                    recommendations[f.recommendation] = recommendations.get(f.recommendation, 0) + 1
+                top_recommendation = max(recommendations.items(), key=lambda x: x[1])[0] if recommendations else "no"
+
+                # Get role from search results
+                role = "Unknown Role"
+                if candidate.searches:
+                    search_session = await self.prisma.searchsession.find_first(
+                        where={"results": {"some": {"candidateId": candidate.id}}}
+                    )
+                    if search_session:
+                        role = search_session.jobTitle
+
+                # Get match score
+                match_score = 50
+                if candidate.searches:
+                    match_score = candidate.searches[0].score if candidate.searches else 50
+
+                result.append({
+                    "id": str(candidate.id),
+                    "name": candidate.name or "Unknown",
+                    "handle": candidate.handle,
+                    "avatar": candidate.avatar or "",
+                    "role": role,
+                    "match": match_score,
+                    "stage": candidate.pipelineStage or "Qualified",
+                    "feedback_count": len(candidate.feedback),
+                    "avg_rating": round(avg_rating, 1),
+                    "top_recommendation": top_recommendation
+                })
+
+            return result
+
+        except Exception as e:
+            print(f"Error getting candidates with feedback: {e}")
+            return []
+
+    async def get_candidate_feedback(self, candidate_id: int):
+        """Get all feedback for a specific candidate"""
+        try:
+            feedback_list = await self.prisma.feedback.find_many(
+                where={"candidateId": candidate_id},
+                order={"createdAt": "desc"}
+            )
+
+            return [
+                {
+                    "id": f.id,
+                    "candidate_id": f.candidateId,
+                    "interviewer_id": f.interviewerId,
+                    "interviewer_name": f.interviewerName,
+                    "interviewer_role": f.interviewerRole,
+                    "interviewer_avatar": f.interviewerAvatar,
+                    "stage": f.stage,
+                    "rating": f.rating,
+                    "recommendation": f.recommendation,
+                    "technical_skills": f.technicalSkills,
+                    "communication": f.communication,
+                    "culture_fit": f.cultureFit,
+                    "comments": f.comments,
+                    "strengths": json.loads(f.strengths),
+                    "concerns": json.loads(f.concerns),
+                    "created_at": f.createdAt.isoformat()
+                }
+                for f in feedback_list
+            ]
+
+        except Exception as e:
+            print(f"Error getting candidate feedback: {e}")
+            return []
+
+    async def create_assessment(self, request):
+        """Create an assessment for a candidate"""
+        try:
+            from datetime import datetime
+
+            # Get candidate details
+            candidate = await self.prisma.candidate.find_unique(
+                where={"id": request.candidate_id},
+                include={"searches": True}
+            )
+
+            if not candidate:
+                return None
+
+            # Get role from search results
+            role = "Unknown Role"
+            if candidate.searches:
+                search_session = await self.prisma.searchsession.find_first(
+                    where={"results": {"some": {"candidateId": candidate.id}}}
+                )
+                if search_session:
+                    role = search_session.jobTitle
+
+            completed_at = datetime.fromisoformat(request.completed_at.replace('Z', '+00:00'))
+
+            assessment = await self.prisma.assessment.create({
+                "candidateId": request.candidate_id,
+                "title": request.title,
+                "description": request.description,
+                "assessmentType": request.assessment_type,
+                "timeLimit": request.time_limit,
+                "completedAt": completed_at
+            })
+
+            return {
+                "id": assessment.id,
+                "candidate_id": assessment.candidateId,
+                "candidate_name": candidate.name or "Unknown",
+                "candidate_avatar": candidate.avatar or "",
+                "candidate_handle": candidate.handle,
+                "candidate_role": role,
+                "title": assessment.title,
+                "description": assessment.description,
+                "assessment_type": assessment.assessmentType,
+                "time_limit": assessment.timeLimit,
+                "status": assessment.status,
+                "assigned_engineer_id": assessment.assignedEngineerId,
+                "assigned_engineer_name": assessment.assignedEngineerName,
+                "assigned_engineer_role": assessment.assignedEngineerRole,
+                "assigned_engineer_avatar": assessment.assignedEngineerAvatar,
+                "completed_at": assessment.completedAt.isoformat(),
+                "created_at": assessment.createdAt.isoformat()
+            }
+
+        except Exception as e:
+            print(f"Error creating assessment: {e}")
+            return None
+
+    async def get_assessments_awaiting_feedback(self):
+        """Get all assessments that are awaiting feedback (pending or forwarded)"""
+        try:
+            assessments = await self.prisma.assessment.find_many(
+                where={"status": {"in": ["pending", "forwarded"]}},
+                include={"candidate": {"include": {"searches": True}}},
+                order={"completedAt": "desc"}
+            )
+
+            result = []
+            for assessment in assessments:
+                candidate = assessment.candidate
+
+                # Get role from search results
+                role = "Unknown Role"
+                if candidate.searches:
+                    search_session = await self.prisma.searchsession.find_first(
+                        where={"results": {"some": {"candidateId": candidate.id}}}
+                    )
+                    if search_session:
+                        role = search_session.jobTitle
+
+                result.append({
+                    "id": assessment.id,
+                    "candidate_id": assessment.candidateId,
+                    "candidate_name": candidate.name or "Unknown",
+                    "candidate_avatar": candidate.avatar or "",
+                    "candidate_handle": candidate.handle,
+                    "candidate_role": role,
+                    "title": assessment.title,
+                    "description": assessment.description,
+                    "assessment_type": assessment.assessmentType,
+                    "time_limit": assessment.timeLimit,
+                    "status": assessment.status,
+                    "assigned_engineer_id": assessment.assignedEngineerId,
+                    "assigned_engineer_name": assessment.assignedEngineerName,
+                    "assigned_engineer_role": assessment.assignedEngineerRole,
+                    "assigned_engineer_avatar": assessment.assignedEngineerAvatar,
+                    "completed_at": assessment.completedAt.isoformat(),
+                    "created_at": assessment.createdAt.isoformat()
+                })
+
+            return result
+
+        except Exception as e:
+            print(f"Error getting assessments awaiting feedback: {e}")
+            return []
+
+    async def forward_assessment(self, request):
+        """Forward an assessment to an engineer for review"""
+        try:
+            assessment = await self.prisma.assessment.update(
+                where={"id": request.assessment_id},
+                data={
+                    "status": "forwarded",
+                    "assignedEngineerId": request.engineer_id,
+                    "assignedEngineerName": request.engineer_name,
+                    "assignedEngineerRole": request.engineer_role,
+                    "assignedEngineerAvatar": request.engineer_avatar
+                }
+            )
+
+            return True if assessment else False
+
+        except Exception as e:
+            print(f"Error forwarding assessment: {e}")
+            return False
+
+    async def submit_feedback_as_message(self, request):
+        """Submit interview feedback as an internal message and create a feedback record"""
+        import json
+        from ..config.userPersonas import USER_PERSONAS
+
+        try:
+            # Get interviewer info
+            interviewer = next((p for p in USER_PERSONAS if p['id'] == request.interviewer_id), None)
+            if not interviewer:
+                print(f"Interviewer not found: {request.interviewer_id}")
+                return None
+
+            # Get candidate info
+            candidate = await self.prisma.candidate.find_unique(
+                where={"id": request.candidate_id}
+            )
+
+            if not candidate:
+                print(f"Candidate not found: {request.candidate_id}")
+                return None
+
+            # Create feedback summary message
+            recommendation_display = request.recommendation.replace('-', ' ').title()
+            strengths_text = ', '.join(request.strengths) if request.strengths else 'None noted'
+            concerns_text = ', '.join(request.concerns) if request.concerns else 'None noted'
+
+            feedback_summary = f"""**Interview Feedback - {request.stage}**
+
+**Rating:** {'⭐' * request.rating} ({request.rating}/5)
+**Recommendation:** {recommendation_display}
+
+**Skills Assessment:**
+• Technical: {request.technical_skills}/5
+• Communication: {request.communication}/5
+• Culture Fit: {request.culture_fit}/5
+
+**Comments:**
+{request.comments}
+
+**Strengths:** {strengths_text}
+**Concerns:** {concerns_text}"""
+
+            # Create metadata with feedback details
+            metadata = json.dumps({
+                "rating": request.rating,
+                "recommendation": request.recommendation,
+                "technical_skills": request.technical_skills,
+                "communication": request.communication,
+                "culture_fit": request.culture_fit,
+                "strengths": request.strengths,
+                "concerns": request.concerns,
+                "stage": request.stage
+            })
+
+            # Save as internal message
+            message = await self.prisma.message.create({
+                "candidateId": request.candidate_id,
+                "content": feedback_summary,
+                "senderId": request.interviewer_id,
+                "senderType": "internal",
+                "messageType": "feedback",
+                "metadata": metadata,
+                "isRead": False,
+                "isInternal": True
+            })
+
+            # Also create a formal feedback record
+            await self.prisma.feedback.create({
+                "candidateId": request.candidate_id,
+                "interviewerId": request.interviewer_id,
+                "interviewerName": interviewer['name'].replace('You (', '').replace(')', ''),
+                "interviewerRole": interviewer['role'],
+                "interviewerAvatar": interviewer['avatar'],
+                "stage": request.stage,
+                "rating": request.rating,
+                "recommendation": request.recommendation,
+                "technicalSkills": request.technical_skills,
+                "communication": request.communication,
+                "cultureFit": request.culture_fit,
+                "comments": request.comments,
+                "strengths": json.dumps(request.strengths),
+                "concerns": json.dumps(request.concerns)
+            })
+
+            print(f"✓ Feedback submitted by {interviewer['name']} for {candidate.name}")
+
+            return {
+                "id": message.id,
+                "candidate_id": message.candidateId,
+                "content": message.content,
+                "sender_id": message.senderId,
+                "sender_type": message.senderType,
+                "message_type": message.messageType,
+                "metadata": message.metadata,
+                "is_read": message.isRead,
+                "is_internal": message.isInternal,
+                "created_at": message.createdAt.isoformat()
+            }
+
+        except Exception as e:
+            print(f"Error submitting feedback as message: {e}")
+            return None

@@ -5,7 +5,10 @@ import json
 from ..models.schemas import (
     ScoutRequest, CandidateResponse, DetailedCandidateResponse,
     UpdatePipelineRequest, NotificationRequest, NotificationResponse,
-    SendMessageRequest, MessageResponse, CreateEventRequest, EventResponse
+    SendMessageRequest, MessageResponse, CreateEventRequest, EventResponse,
+    CreateFeedbackRequest, FeedbackResponse, CandidateWithFeedback,
+    CreateAssessmentRequest, AssessmentResponse, ForwardAssessmentRequest,
+    SubmitFeedbackMessageRequest
 )
 from ..services.talent_service import TalentService
 from ..services.twitter_oauth_service import TwitterOAuthService
@@ -387,4 +390,151 @@ async def download_calendar_invite(event_id: int):
         raise
     except Exception as e:
         print(f"Download calendar invite error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+# Feedback endpoints
+@router.post("/feedback", response_model=FeedbackResponse)
+async def create_feedback(request: CreateFeedbackRequest):
+    """Create interview feedback for a candidate"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        feedback = await talent_service.create_feedback(request)
+
+        await talent_service.prisma.disconnect()
+
+        if not feedback:
+            raise HTTPException(status_code=404, detail="Failed to create feedback")
+
+        return feedback
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Create feedback error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/feedback/candidates-with-feedback", response_model=List[CandidateWithFeedback])
+async def get_candidates_with_feedback():
+    """Get all candidates that have received feedback"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        candidates = await talent_service.get_candidates_with_feedback()
+
+        await talent_service.prisma.disconnect()
+
+        return candidates
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Get candidates with feedback error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/candidates/{candidate_id}/feedback", response_model=List[FeedbackResponse])
+async def get_candidate_feedback(candidate_id: int):
+    """Get all feedback for a specific candidate"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        feedback = await talent_service.get_candidate_feedback(candidate_id)
+
+        await talent_service.prisma.disconnect()
+
+        return feedback
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Get candidate feedback error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.post("/feedback/submit-as-message", response_model=MessageResponse)
+async def submit_feedback_as_message(request: SubmitFeedbackMessageRequest):
+    """Submit interview feedback as an internal message (creates both message and feedback record)"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        message = await talent_service.submit_feedback_as_message(request)
+
+        await talent_service.prisma.disconnect()
+
+        if not message:
+            raise HTTPException(status_code=404, detail="Failed to submit feedback")
+
+        return message
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Submit feedback as message error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+# Assessment endpoints
+@router.post("/assessments", response_model=AssessmentResponse)
+async def create_assessment(request: CreateAssessmentRequest):
+    """Create an assessment for a candidate"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        assessment = await talent_service.create_assessment(request)
+
+        await talent_service.prisma.disconnect()
+
+        if not assessment:
+            raise HTTPException(status_code=404, detail="Failed to create assessment")
+
+        return assessment
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Create assessment error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/assessments/awaiting-feedback", response_model=List[AssessmentResponse])
+async def get_assessments_awaiting_feedback():
+    """Get all assessments that are awaiting feedback"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        assessments = await talent_service.get_assessments_awaiting_feedback()
+
+        await talent_service.prisma.disconnect()
+
+        return assessments
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Get assessments awaiting feedback error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.post("/assessments/forward")
+async def forward_assessment(request: ForwardAssessmentRequest):
+    """Forward an assessment to an engineer for review"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        success = await talent_service.forward_assessment(request)
+
+        await talent_service.prisma.disconnect()
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Failed to forward assessment")
+
+        return {"success": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Forward assessment error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

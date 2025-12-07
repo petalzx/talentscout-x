@@ -88,9 +88,10 @@ class SendMessageRequest(BaseModel):
     candidate_id: int
     content: str
     sender_id: str  # "recruiter-1", "recruiter-2", "hiring-manager-1", etc.
-    sender_type: str = "recruiter"  # "recruiter" or "candidate"
-    message_type: str = "text"  # "text", "meeting", "assessment"
-    metadata: Optional[str] = None  # JSON string for meeting/assessment details
+    sender_type: str = "recruiter"  # "recruiter", "candidate", or "internal"
+    message_type: str = "text"  # "text", "meeting", "assessment", "feedback"
+    metadata: Optional[str] = None  # JSON string for meeting/assessment/feedback details
+    is_internal: bool = False  # True for internal team discussions
 
 class MessageResponse(BaseModel):
     id: int
@@ -101,7 +102,21 @@ class MessageResponse(BaseModel):
     message_type: str
     metadata: Optional[str]
     is_read: bool
+    is_internal: bool
     created_at: str
+
+class SubmitFeedbackMessageRequest(BaseModel):
+    candidate_id: int
+    interviewer_id: str  # "hiring-manager-1", etc.
+    stage: str  # "Round 1", "Round 2", "Final"
+    rating: int  # 1-5
+    recommendation: str  # "strong-yes", "yes", "maybe", "no", "strong-no"
+    technical_skills: int  # 1-5
+    communication: int  # 1-5
+    culture_fit: int  # 1-5
+    comments: str
+    strengths: List[str]
+    concerns: List[str]
 
 class CreateEventRequest(BaseModel):
     candidate_id: int
@@ -113,6 +128,7 @@ class CreateEventRequest(BaseModel):
     meeting_type: str = "video"  # "video", "phone", "in_person"
     meeting_link: Optional[str] = None
     notes: Optional[str] = None
+    assigned_interviewer_id: Optional[str] = None  # ID of assigned interviewer
 
 class EventResponse(BaseModel):
     id: int
@@ -126,4 +142,87 @@ class EventResponse(BaseModel):
     status: str
     meeting_link: Optional[str]
     notes: Optional[str]
+    assigned_interviewer_id: Optional[str]
+    assigned_interviewer_name: Optional[str]
+    assigned_interviewer_role: Optional[str]
     created_at: str
+
+class CreateFeedbackRequest(BaseModel):
+    candidate_id: int
+    interviewer_id: str  # "recruiter-1", "hiring-manager-1", etc.
+    interviewer_name: str
+    interviewer_role: str
+    interviewer_avatar: str
+    stage: str  # "Round 1", "Round 2", "Final", etc.
+    rating: int  # 1-5
+    recommendation: str  # "strong-yes", "yes", "maybe", "no", "strong-no"
+    technical_skills: int  # 1-5
+    communication: int  # 1-5
+    culture_fit: int  # 1-5
+    comments: str
+    strengths: List[str]
+    concerns: List[str]
+
+class FeedbackResponse(BaseModel):
+    id: int
+    candidate_id: int
+    interviewer_id: str
+    interviewer_name: str
+    interviewer_role: str
+    interviewer_avatar: str
+    stage: str
+    rating: int
+    recommendation: str
+    technical_skills: int
+    communication: int
+    culture_fit: int
+    comments: str
+    strengths: List[str]
+    concerns: List[str]
+    created_at: str
+
+class CreateAssessmentRequest(BaseModel):
+    candidate_id: int
+    title: str
+    description: Optional[str] = None
+    assessment_type: str  # "coding", "system-design", "take-home", etc.
+    time_limit: int  # minutes
+    completed_at: str  # ISO datetime string
+
+class AssessmentResponse(BaseModel):
+    id: int
+    candidate_id: int
+    candidate_name: str
+    candidate_avatar: str
+    candidate_handle: str
+    candidate_role: str
+    title: str
+    description: Optional[str]
+    assessment_type: str
+    time_limit: int
+    status: str
+    assigned_engineer_id: Optional[str]
+    assigned_engineer_name: Optional[str]
+    assigned_engineer_role: Optional[str]
+    assigned_engineer_avatar: Optional[str]
+    completed_at: str
+    created_at: str
+
+class ForwardAssessmentRequest(BaseModel):
+    assessment_id: int
+    engineer_id: str  # "hiring-manager-1", etc.
+    engineer_name: str
+    engineer_role: str
+    engineer_avatar: str
+
+class CandidateWithFeedback(BaseModel):
+    id: str
+    name: str
+    handle: str
+    avatar: str
+    role: str
+    match: int
+    stage: str
+    feedback_count: int
+    avg_rating: float
+    top_recommendation: str

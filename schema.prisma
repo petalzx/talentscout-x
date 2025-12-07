@@ -25,6 +25,8 @@ model Candidate {
   notifications  Notification[]
   messages       Message[]
   events         Event[]
+  feedback       Feedback[]
+  assessments    Assessment[]
 
   @@map("Candidate")
 }
@@ -83,11 +85,12 @@ model Message {
   id          Int      @id @default(autoincrement())
   candidateId Int
   content     String
-  senderId    String   // "recruiter" or candidate ID
-  senderType  String   // "recruiter" or "candidate"
-  messageType String   @default("text") // "text", "meeting", "assessment"
-  metadata    String?  // JSON string for meeting/assessment details
+  senderId    String   // "recruiter-1", "hiring-manager-1", etc. or candidate ID
+  senderType  String   // "recruiter", "candidate", or "internal"
+  messageType String   @default("text") // "text", "meeting", "assessment", "feedback"
+  metadata    String?  // JSON string for meeting/assessment/feedback details
   isRead      Boolean  @default(false)
+  isInternal  Boolean  @default(false) // True for internal team discussions
   createdAt   DateTime @default(now())
   candidate   Candidate @relation(fields: [candidateId], references: [id])
 
@@ -95,19 +98,63 @@ model Message {
 }
 
 model Event {
-  id          Int      @id @default(autoincrement())
-  candidateId Int
-  title       String
-  description String?
-  eventType   String   // "phone_screen", "technical", "final", "coffee_chat", etc.
-  scheduledAt DateTime
-  duration    Int      // Duration in minutes
-  meetingType String   @default("video") // "video", "phone", "in_person"
-  status      String   @default("scheduled") // "scheduled", "completed", "cancelled"
-  meetingLink String?
-  notes       String?
-  createdAt   DateTime @default(now())
-  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  id                     Int      @id @default(autoincrement())
+  candidateId            Int
+  title                  String
+  description            String?
+  eventType              String   // "phone_screen", "technical", "final", "coffee_chat", etc.
+  scheduledAt            DateTime
+  duration               Int      // Duration in minutes
+  meetingType            String   @default("video") // "video", "phone", "in_person"
+  status                 String   @default("scheduled") // "scheduled", "completed", "cancelled"
+  meetingLink            String?
+  notes                  String?
+  assignedInterviewerId  String?  // ID of interviewer assigned to conduct interview
+  assignedInterviewerName String? // Name of assigned interviewer
+  assignedInterviewerRole String? // Role of assigned interviewer
+  createdAt              DateTime @default(now())
+  candidate              Candidate @relation(fields: [candidateId], references: [id])
 
   @@map("Event")
+}
+
+model Feedback {
+  id                Int      @id @default(autoincrement())
+  candidateId       Int
+  interviewerId     String   // "recruiter-1", "hiring-manager-1", etc.
+  interviewerName   String
+  interviewerRole   String
+  interviewerAvatar String
+  stage             String   // "Round 1", "Round 2", "Final", etc.
+  rating            Int      // 1-5 overall rating
+  recommendation    String   // "strong-yes", "yes", "maybe", "no", "strong-no"
+  technicalSkills   Int      // 1-5
+  communication     Int      // 1-5
+  cultureFit        Int      // 1-5
+  comments          String
+  strengths         String   // JSON array of strings
+  concerns          String   // JSON array of strings
+  createdAt         DateTime @default(now())
+  candidate         Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("Feedback")
+}
+
+model Assessment {
+  id                      Int      @id @default(autoincrement())
+  candidateId             Int
+  title                   String
+  description             String?
+  assessmentType          String   // "coding", "system-design", "take-home", etc.
+  timeLimit               Int      // Time limit in minutes
+  status                  String   @default("pending") // "pending", "forwarded", "reviewed"
+  assignedEngineerId      String?  // "hiring-manager-1", etc.
+  assignedEngineerName    String?
+  assignedEngineerRole    String?
+  assignedEngineerAvatar  String?
+  completedAt             DateTime
+  createdAt               DateTime @default(now())
+  candidate               Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("Assessment")
 }

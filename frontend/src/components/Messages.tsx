@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Send, Calendar, FileText, Paperclip, X, Clock, Video, Phone, MoreVertical, ChevronLeft, Sparkles, Wand2, Users, Briefcase, MessageSquare } from 'lucide-react';
+import { Search, Send, Calendar, FileText, Paperclip, X, Clock, Video, Phone, MoreVertical, ChevronLeft, Sparkles, Wand2, Users, Briefcase, MessageSquare, User } from 'lucide-react';
 import axios from 'axios';
+import { USER_PERSONAS } from '../config/userPersonas';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -9,6 +10,7 @@ type MessageTab = 'candidates' | 'internal';
 interface Message {
   id: string;
   senderId: string;
+  senderType?: string; // 'recruiter', 'candidate', or 'internal'
   text: string;
   timestamp: string;
   type: 'text' | 'meeting' | 'assessment' | 'feedback';
@@ -301,15 +303,21 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState<'conversations' | 'candidates' | 'username'>('conversations');
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [isSchedulingMeeting, setIsSchedulingMeeting] = useState(false);
   const [showAssessmentModal, setShowAssessmentModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showAIMessageModal, setShowAIMessageModal] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [generatedMessage, setGeneratedMessage] = useState('');
+  const [showFeedbackRequestModal, setShowFeedbackRequestModal] = useState(false);
+  const [feedbackRequestMessage, setFeedbackRequestMessage] = useState('');
+  const [feedbackRequestTarget, setFeedbackRequestTarget] = useState<any>(null);
 
   // Real candidates state
   const [realCandidateConversations, setRealCandidateConversations] = useState<Conversation[]>([]);
+  const [realInternalConversations, setRealInternalConversations] = useState<Conversation[]>([]);
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(true);
+  const [isLoadingInternal, setIsLoadingInternal] = useState(true);
 
   // All candidates from database (for candidate search mode)
   const [allCandidates, setAllCandidates] = useState<any[]>([]);
@@ -321,6 +329,7 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   const [meetingTime, setMeetingTime] = useState('');
   const [meetingDuration, setMeetingDuration] = useState('30');
   const [meetingType, setMeetingType] = useState<'video' | 'phone'>('video');
+  const [meetingInterviewer, setMeetingInterviewer] = useState('');
 
   // Assessment form
   const [assessmentTitle, setAssessmentTitle] = useState('');
@@ -332,7 +341,15 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   // Feedback form
   const [feedbackCandidate, setFeedbackCandidate] = useState('');
   const [feedbackRating, setFeedbackRating] = useState(3);
-  const [feedbackRecommendation, setFeedbackRecommendation] = useState('');
+  const [feedbackRecommendation, setFeedbackRecommendation] = useState('strong-yes');
+  const [feedbackStage, setFeedbackStage] = useState('Round 1');
+  const [feedbackTechnical, setFeedbackTechnical] = useState(3);
+  const [feedbackCommunication, setFeedbackCommunication] = useState(3);
+  const [feedbackCulture, setFeedbackCulture] = useState(3);
+  const [feedbackComments, setFeedbackComments] = useState('');
+  const [feedbackStrengths, setFeedbackStrengths] = useState('');
+  const [feedbackConcerns, setFeedbackConcerns] = useState('');
+  const [feedbackInterviewer, setFeedbackInterviewer] = useState('hiring-manager-1');
 
   // Load real candidates with notifications on mount
   useEffect(() => {
@@ -392,6 +409,101 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
     };
 
     loadCandidates();
+  }, []);
+
+  // Function to reload internal conversations (grouped by coworker)
+  const reloadInternalConversations = async () => {
+    try {
+      setIsLoadingInternal(true);
+
+      // Get all candidates to fetch their messages
+      const candidatesResponse = await axios.get(`${API_BASE}/candidates`);
+      const candidates = candidatesResponse.data;
+
+      // Collect all internal messages from all candidates
+      const allInternalMessages: any[] = [];
+
+      for (const candidate of candidates) {
+        try {
+          const messagesResponse = await axios.get(`${API_BASE}/candidates/${candidate.id}/messages`);
+          const messages = messagesResponse.data;
+
+          // Filter for internal messages and add candidate info
+          const internalMsgs = messages
+            .filter((msg: any) => msg.is_internal === true)
+            .map((msg: any) => ({
+              ...msg,
+              candidateName: candidate.name,
+              candidateHandle: candidate.handle,
+            }));
+
+          allInternalMessages.push(...internalMsgs);
+        } catch (err) {
+          // Skip candidates with errors
+        }
+      }
+
+      // Group messages by sender_id (coworker)
+      const messagesByCoworker = new Map<string, any[]>();
+
+      for (const msg of allInternalMessages) {
+        const senderId = msg.sender_id;
+        if (!messagesByCoworker.has(senderId)) {
+          messagesByCoworker.set(senderId, []);
+        }
+        messagesByCoworker.get(senderId)!.push(msg);
+      }
+
+      // Create conversations for each coworker
+      const conversations: Conversation[] = [];
+
+      for (const [senderId, messages] of messagesByCoworker.entries()) {
+        // Find the coworker in USER_PERSONAS
+        const coworker = USER_PERSONAS.find(p => p.id === senderId);
+
+        if (!coworker) continue; // Skip if not found in personas
+
+        // Sort messages by date
+        messages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        const lastMsg = messages[messages.length - 1];
+
+        // Convert to Message format
+        const formattedMessages: Message[] = messages.map((msg: any) => ({
+          id: msg.id.toString(),
+          senderId: msg.sender_id,
+          senderType: msg.sender_type, // Include sender type for proper styling
+          text: msg.content,
+          timestamp: formatNotificationTime(msg.created_at),
+          type: msg.message_type as 'text' | 'meeting' | 'assessment' | 'feedback',
+        }));
+
+        conversations.push({
+          id: senderId, // Use coworker ID as conversation ID
+          name: coworker.name.replace('You (', '').replace(')', ''),
+          handle: `@${coworker.role.toLowerCase().replace(/\s+/g, '')}`,
+          avatar: coworker.avatar,
+          role: coworker.role,
+          lastMessage: lastMsg.content.substring(0, 60) + '...',
+          timestamp: formatNotificationTime(lastMsg.created_at),
+          unread: false,
+          isInternal: true,
+          messages: formattedMessages,
+        });
+      }
+
+      setRealInternalConversations(conversations);
+    } catch (error) {
+      console.error('Failed to load internal conversations:', error);
+      setRealInternalConversations([]);
+    } finally {
+      setIsLoadingInternal(false);
+    }
+  };
+
+  // Load internal conversations (conversations with coworkers)
+  useEffect(() => {
+    reloadInternalConversations();
   }, []);
 
   const formatNotificationTime = (isoString: string) => {
@@ -533,13 +645,48 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
     openOrCreateConversation();
   }, [openConversationId, realCandidateConversations, isLoadingCandidates, onConversationOpened]);
 
-  // Debug selected conversation changes
+  // Load messages when conversation is selected
   useEffect(() => {
-    console.log('Selected conversation changed:', selectedConversation?.name || 'null');
-    if (selectedConversation === null) {
-      console.trace('Conversation set to null - stack trace:');
-    }
-  }, [selectedConversation]);
+    const loadMessages = async () => {
+      if (!selectedConversation) return;
+
+      // Skip loading for internal conversations - they already have their messages loaded
+      if (selectedConversation.isInternal) {
+        console.log('Skipping message load for internal conversation:', selectedConversation.name);
+        return;
+      }
+
+      try {
+        console.log('Loading messages for:', selectedConversation.name);
+        const response = await axios.get(`${API_BASE}/candidates/${selectedConversation.id}/messages`);
+        const apiMessages = response.data;
+
+        console.log('Loaded messages:', apiMessages.length);
+
+        if (apiMessages.length > 0) {
+          // Filter out internal messages
+          const externalMessages = apiMessages.filter((msg: any) => !msg.is_internal);
+
+          const formattedMessages: Message[] = externalMessages.map((msg: any) => ({
+            id: msg.id.toString(),
+            senderId: msg.sender_type === 'recruiter' ? 'recruiter' : msg.candidate_id.toString(),
+            text: msg.content,
+            timestamp: formatTimestamp(msg.created_at),
+            type: msg.message_type as 'text' | 'meeting' | 'assessment' | 'feedback',
+          }));
+
+          setSelectedConversation(prev => {
+            if (!prev || String(prev.id) !== String(selectedConversation.id)) return prev;
+            return { ...prev, messages: formattedMessages };
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load messages:', error);
+      }
+    };
+
+    loadMessages();
+  }, [selectedConversation?.id]); // Only run when conversation ID changes
 
   // Handle opening a conversation from candidate search results
   const handleOpenCandidateConversation = async (candidateId: string) => {
@@ -601,7 +748,7 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
 
   const currentConversations = activeTab === 'candidates'
     ? (isLoadingCandidates ? [] : realCandidateConversations)
-    : internalConversations;
+    : (isLoadingInternal ? [] : realInternalConversations);
 
   // Filter based on search mode
   const getFilteredResults = () => {
@@ -735,18 +882,29 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
     if (!selectedConversation) return;
 
     try {
-      // Fetch messages from backend
-      const response = await axios.get(`${API_BASE}/candidates/${selectedConversation.id}/messages`);
-      const apiMessages = response.data;
+      let formattedMessages: Message[] = [];
 
-      // Transform API messages to UI format
-      const formattedMessages: Message[] = apiMessages.map((msg: any) => ({
-        id: msg.id.toString(),
-        senderId: msg.sender_type === 'recruiter' ? msg.sender_id : msg.candidate_id.toString(),
-        text: msg.content,
-        timestamp: formatTimestamp(msg.created_at),
-        type: msg.message_type as 'text' | 'meeting' | 'assessment' | 'feedback',
-      }));
+      if (selectedConversation.isInternal) {
+        // For internal conversations (grouped by coworker), we already have the messages
+        // Just use what's in the conversation object
+        formattedMessages = selectedConversation.messages || [];
+      } else {
+        // For candidate conversations, fetch from API
+        const response = await axios.get(`${API_BASE}/candidates/${selectedConversation.id}/messages`);
+        const apiMessages = response.data;
+
+        // Filter out internal messages (only show external messages)
+        const filteredMessages = apiMessages.filter((msg: any) => !msg.is_internal);
+
+        // Transform API messages to UI format
+        formattedMessages = filteredMessages.map((msg: any) => ({
+          id: msg.id.toString(),
+          senderId: msg.sender_type === 'recruiter' ? 'recruiter' : msg.candidate_id.toString(),
+          text: msg.content,
+          timestamp: formatTimestamp(msg.created_at),
+          type: msg.message_type as 'text' | 'meeting' | 'assessment' | 'feedback',
+        }));
+      }
 
       // Update selected conversation with new messages
       setSelectedConversation((prev: Conversation | null) => {
@@ -755,28 +913,45 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
         return {
           ...prev,
           messages: formattedMessages,
-          lastMessage: lastMessage ? lastMessage.text.substring(0, 60) : prev.lastMessage,
+          lastMessage: lastMessage ? lastMessage.text.substring(0, 60) + '...' : prev.lastMessage,
           timestamp: lastMessage ? lastMessage.timestamp : prev.timestamp,
         };
       });
 
-      // Also update in the conversations list
-      setRealCandidateConversations((prev: Conversation[]) =>
-        prev.map((conv: Conversation) => {
-          if (String(conv.id) === String(selectedConversation.id)) {
-            const lastMessage = formattedMessages[formattedMessages.length - 1];
-            return {
-              ...conv,
-              messages: formattedMessages,
-              lastMessage: lastMessage ? lastMessage.text.substring(0, 60) : conv.lastMessage,
-              timestamp: lastMessage ? lastMessage.timestamp : conv.timestamp,
-            };
-          }
-          return conv;
-        })
-      );
+      // Update in the appropriate conversations list based on type
+      if (selectedConversation.isInternal) {
+        setRealInternalConversations((prev: Conversation[]) =>
+          prev.map((conv: Conversation) => {
+            if (String(conv.id) === String(selectedConversation.id)) {
+              const lastMessage = formattedMessages[formattedMessages.length - 1];
+              return {
+                ...conv,
+                messages: formattedMessages,
+                lastMessage: lastMessage ? lastMessage.text.substring(0, 60) + '...' : conv.lastMessage,
+                timestamp: lastMessage ? lastMessage.timestamp : conv.timestamp,
+              };
+            }
+            return conv;
+          })
+        );
+      } else {
+        setRealCandidateConversations((prev: Conversation[]) =>
+          prev.map((conv: Conversation) => {
+            if (String(conv.id) === String(selectedConversation.id)) {
+              const lastMessage = formattedMessages[formattedMessages.length - 1];
+              return {
+                ...conv,
+                messages: formattedMessages,
+                lastMessage: lastMessage ? lastMessage.text.substring(0, 60) + '...' : conv.lastMessage,
+                timestamp: lastMessage ? lastMessage.timestamp : conv.timestamp,
+              };
+            }
+            return conv;
+          })
+        );
+      }
 
-      console.log('Messages refreshed:', formattedMessages.length);
+      console.log('Messages refreshed:', formattedMessages.length, 'isInternal:', selectedConversation.isInternal);
     } catch (error) {
       console.error('Failed to refresh messages:', error);
     }
@@ -798,102 +973,178 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   };
 
   const handleSendMessage = async () => {
-    if (!messageText.trim() || !selectedConversation) return;
+    if (!messageText.trim() || !selectedConversation) {
+      console.log('Cannot send: missing text or conversation');
+      return;
+    }
 
     const messageContent = messageText.trim();
     console.log('Sending message:', messageContent);
+    console.log('To candidate ID:', selectedConversation.id);
+    console.log('Is internal conversation:', selectedConversation.isInternal);
 
     // Clear input immediately for better UX
     setMessageText('');
 
     try {
       // Send message to backend API
-      const response = await axios.post(`${API_BASE}/messages`, {
+      const payload = {
         candidate_id: parseInt(selectedConversation.id),
         content: messageContent,
         sender_id: 'recruiter-1',
-        sender_type: 'recruiter',
-        message_type: 'text'
-      });
+        sender_type: selectedConversation.isInternal ? 'internal' : 'recruiter',
+        message_type: 'text',
+        is_internal: selectedConversation.isInternal || false
+      };
 
-      console.log('Message sent:', response.data);
+      console.log('Sending payload:', payload);
 
-      // Wait a moment for AI response to be generated
-      setTimeout(async () => {
-        await refreshMessages();
-      }, 3000); // 3 second delay to allow AI to respond
+      const response = await axios.post(`${API_BASE}/messages`, payload);
 
-    } catch (error) {
+      console.log('Message sent successfully:', response.data);
+
+      // Immediately refresh to show your message
+      await refreshMessages();
+
+      // For external messages, wait a moment for AI response to be generated, then refresh again
+      if (!selectedConversation.isInternal) {
+        setTimeout(async () => {
+          console.log('Refreshing messages to get AI response...');
+          await refreshMessages();
+        }, 3000); // 3 second delay to allow AI to respond
+      }
+
+    } catch (error: any) {
       console.error('Failed to send message:', error);
-      // Message still shows in UI, just not persisted
+      console.error('Error details:', error.response?.data || error.message);
     }
   };
 
   const handleScheduleMeeting = async () => {
-    if (!meetingDate || !meetingTime || !selectedConversation) {
-      alert('Please fill in all meeting details');
+    if (!meetingDate || !meetingTime || !selectedConversation || !meetingInterviewer) {
+      alert('Please fill in all meeting details and select an interviewer');
       return;
     }
 
-    const meetingMessage: Message = {
-      id: `meeting-${Date.now()}`,
-      senderId: 'recruiter',
-      text: '',
-      timestamp: 'Just now',
-      type: 'meeting',
-      meetingData: {
-        date: new Date(meetingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        time: meetingTime,
-        duration: `${meetingDuration} min`,
-        type: meetingType,
-      },
-    };
-
-    // Update UI
-    setSelectedConversation(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        messages: [...prev.messages, meetingMessage],
-        lastMessage: `Meeting scheduled for ${meetingMessage.meetingData?.date}`,
-        timestamp: 'Just now',
-      };
-    });
-
-    // Update conversations list
-    setRealCandidateConversations(prev =>
-      prev.map(conv => {
-        if (String(conv.id) === String(selectedConversation.id)) {
-          return {
-            ...conv,
-            messages: [...conv.messages, meetingMessage],
-            lastMessage: `Meeting scheduled for ${meetingMessage.meetingData?.date}`,
-            timestamp: 'Just now',
-          };
-        }
-        return conv;
-      })
-    );
-
-    // Save to backend
-    try {
-      await axios.post(`${API_BASE}/notifications`, {
-        candidate_id: parseInt(selectedConversation.id),
-        message: `Meeting scheduled for ${meetingMessage.meetingData?.date} at ${meetingTime} (${meetingDuration} min ${meetingType} call)`,
-        event_type: 'meeting_scheduled',
-        from_stage: null,
-        to_stage: null,
-        is_ai_generated: false,
-      });
-    } catch (error) {
-      console.error('Failed to save meeting to backend:', error);
+    // Prevent multiple submissions
+    if (isSchedulingMeeting) {
+      console.log('Already scheduling meeting, ignoring duplicate click');
+      return;
     }
 
-    setShowScheduleModal(false);
-    setMeetingDate('');
-    setMeetingTime('');
-    setMeetingDuration('30');
-    setMeetingType('video');
+    setIsSchedulingMeeting(true);
+
+    try {
+      const meetingMessage: Message = {
+        id: `meeting-${Date.now()}`,
+        senderId: 'recruiter',
+        text: '',
+        timestamp: 'Just now',
+        type: 'meeting',
+        meetingData: {
+          date: new Date(meetingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          time: meetingTime,
+          duration: `${meetingDuration} min`,
+          type: meetingType,
+        },
+      };
+
+      // Update UI
+      setSelectedConversation(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          messages: [...prev.messages, meetingMessage],
+          lastMessage: `Meeting scheduled for ${meetingMessage.meetingData?.date}`,
+          timestamp: 'Just now',
+        };
+      });
+
+      // Update conversations list
+      setRealCandidateConversations(prev =>
+        prev.map(conv => {
+          if (String(conv.id) === String(selectedConversation.id)) {
+            return {
+              ...conv,
+              messages: [...conv.messages, meetingMessage],
+              lastMessage: `Meeting scheduled for ${meetingMessage.meetingData?.date}`,
+              timestamp: 'Just now',
+            };
+          }
+          return conv;
+        })
+      );
+
+      // Save to backend with interviewer assignment
+      console.log('Creating event with interviewer:', meetingInterviewer);
+      const eventResponse = await axios.post(`${API_BASE}/events`, {
+        candidate_id: parseInt(selectedConversation.id),
+        title: 'Interview Meeting',
+        description: `${meetingType} interview`,
+        event_type: 'meeting',
+        scheduled_at: `${meetingDate}T${meetingTime}:00`,
+        duration: parseInt(meetingDuration),
+        meeting_type: meetingType,
+        meeting_link: meetingType === 'video' ? 'Google Meet' : null,
+        notes: null,
+        assigned_interviewer_id: meetingInterviewer
+      });
+
+      console.log('Event created:', eventResponse.data);
+
+      // Get interviewer info for notifications
+      const interviewer = USER_PERSONAS.find(p => p.id === meetingInterviewer);
+      const interviewerName = interviewer?.name.replace('You (', '').replace(')', '') || 'Team Member';
+      const candidateName = selectedConversation.name || 'Candidate';
+      const meetingDateFormatted = new Date(meetingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+      // Send notification message to the candidate (in their message thread)
+      const candidateMessageResponse = await axios.post(`${API_BASE}/messages`, {
+        candidate_id: parseInt(selectedConversation.id),
+        sender_id: 'recruiter-1',
+        sender_type: 'recruiter',
+        message_type: 'text',
+        content: `Your interview with ${interviewerName} has been scheduled for ${meetingDateFormatted} at ${meetingTime} (${meetingDuration} min ${meetingType} call). We look forward to speaking with you!`
+      });
+
+      console.log('Candidate notification sent:', candidateMessageResponse.data);
+
+      // Send internal notification to the interviewer
+      // For internal messages, sender_id should be the interviewer's ID (who we're messaging)
+      // Use sender_type: 'recruiter' so it displays as "sent by you" (blue)
+      const internalMessageResponse = await axios.post(`${API_BASE}/messages`, {
+        candidate_id: parseInt(selectedConversation.id),
+        sender_id: meetingInterviewer, // Use interviewer ID as sender for grouping
+        sender_type: 'recruiter',
+        message_type: 'text',
+        content: `@${interviewerName}: You've been assigned to interview ${candidateName} on ${meetingDateFormatted} at ${meetingTime} (${meetingDuration} min ${meetingType} call). Please review their profile and prepare feedback after the interview.`,
+        is_internal: true
+      });
+
+      console.log('Internal notification sent:', internalMessageResponse.data);
+
+      // Refresh messages to show the new notifications
+      if (selectedConversation) {
+        await refreshMessages();
+      }
+
+      // Reload internal conversations to show the new internal notification
+      await reloadInternalConversations();
+
+      // Close modal and reset form
+      setShowScheduleModal(false);
+      setMeetingDate('');
+      setMeetingTime('');
+      setMeetingDuration('30');
+      setMeetingType('video');
+      setMeetingInterviewer('');
+
+    } catch (error) {
+      console.error('Failed to schedule meeting:', error);
+      alert('Failed to schedule meeting. Please try again.');
+    } finally {
+      setIsSchedulingMeeting(false);
+    }
   };
 
   const handleGenerateAssessment = async () => {
@@ -1144,16 +1395,356 @@ Deliverables:
     setGeneratedAssessment('');
   };
 
-  const handleSendFeedback = () => {
-    if (!feedbackCandidate || !feedbackRecommendation.trim()) {
-      alert('Please fill in all feedback fields');
+  const handleSendFeedback = async () => {
+    if (!feedbackCandidate || !feedbackComments.trim()) {
+      alert('Please fill in all required fields');
       return;
     }
-    console.log('Sending feedback:', { feedbackCandidate, feedbackRating, feedbackRecommendation });
-    setShowFeedbackModal(false);
-    setFeedbackCandidate('');
-    setFeedbackRating(3);
-    setFeedbackRecommendation('');
+
+    try {
+      // Parse strengths and concerns from comma-separated strings
+      const strengths = feedbackStrengths.split(',').map(s => s.trim()).filter(Boolean);
+      const concerns = feedbackConcerns.split(',').map(s => s.trim()).filter(Boolean);
+
+      // Use the selected conversation's interviewer ID if it's an internal conversation
+      const interviewerId = selectedConversation?.isInternal
+        ? selectedConversation.id
+        : feedbackInterviewer;
+
+      const payload = {
+        candidate_id: parseInt(feedbackCandidate),
+        interviewer_id: interviewerId,
+        stage: feedbackStage,
+        rating: feedbackRating,
+        recommendation: feedbackRecommendation,
+        technical_skills: feedbackTechnical,
+        communication: feedbackCommunication,
+        culture_fit: feedbackCulture,
+        comments: feedbackComments,
+        strengths,
+        concerns
+      };
+
+      console.log('Submitting feedback:', payload);
+
+      await axios.post(`${API_BASE}/feedback/submit-as-message`, payload);
+
+      // If this is from an internal conversation, also send a reply message
+      if (selectedConversation?.isInternal) {
+        const candidate = allCandidates.find(c => c.id === parseInt(feedbackCandidate));
+        const feedbackSummary = `Feedback submitted for ${candidate?.name || 'candidate'}: ${feedbackRecommendation.replace('-', ' ')} (${feedbackRating}/5 stars). ${feedbackComments.substring(0, 100)}...`;
+
+        await axios.post(`${API_BASE}/messages`, {
+          candidate_id: parseInt(feedbackCandidate),
+          content: feedbackSummary,
+          sender_id: interviewerId,
+          sender_type: 'internal',
+          message_type: 'text',
+          is_internal: true
+        });
+
+        // Add message to current conversation
+        const newMessage: Message = {
+          id: `msg-${Date.now()}`,
+          senderId: interviewerId,
+          text: feedbackSummary,
+          timestamp: 'Just now',
+          type: 'text',
+        };
+
+        setSelectedConversation(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            messages: [...prev.messages, newMessage],
+            lastMessage: feedbackSummary.substring(0, 60) + '...',
+            timestamp: 'Just now',
+          };
+        });
+
+        // Reload internal conversations
+        await reloadInternalConversations();
+      }
+
+      // Reset form
+      setShowFeedbackModal(false);
+      setFeedbackCandidate('');
+      setFeedbackRating(3);
+      setFeedbackRecommendation('strong-yes');
+      setFeedbackStage('Round 1');
+      setFeedbackTechnical(3);
+      setFeedbackCommunication(3);
+      setFeedbackCulture(3);
+      setFeedbackComments('');
+      setFeedbackStrengths('');
+      setFeedbackConcerns('');
+
+      // Refresh messages to show the new feedback
+      if (selectedConversation && !selectedConversation.isInternal) {
+        await refreshMessages();
+      }
+
+      alert('Feedback submitted successfully!');
+    } catch (error) {
+      console.error('Failed to submit feedback:', error);
+      alert('Failed to submit feedback. Please try again.');
+    }
+  };
+
+  const handleRequestFeedback = async () => {
+    if (!selectedConversation) return;
+
+    try {
+      // Get all candidates that this interviewer was assigned to
+      const candidatesResponse = await axios.get(`${API_BASE}/candidates`);
+      const allCandidates = candidatesResponse.data;
+
+      // Find events where this interviewer was assigned
+      const interviewerId = selectedConversation.id; // This is the coworker ID
+      const candidatesWithInterviews: any[] = [];
+
+      for (const candidate of allCandidates) {
+        try {
+          const eventsResponse = await axios.get(`${API_BASE}/candidates/${candidate.id}/events`);
+          const events = eventsResponse.data;
+
+          // Check if this interviewer was assigned to any events for this candidate
+          const hasAssignedEvents = events.some((event: any) => event.assigned_interviewer_id === interviewerId);
+
+          if (hasAssignedEvents) {
+            candidatesWithInterviews.push(candidate);
+          }
+        } catch (err) {
+          // Skip candidates with errors
+        }
+      }
+
+      // Generate feedback request message
+      let feedbackMessage = '';
+      const interviewerName = selectedConversation.name;
+
+      if (candidatesWithInterviews.length === 0) {
+        feedbackMessage = `Hi ${interviewerName}, could you provide feedback on any recent interviews you've conducted? Your insights would be valuable for our hiring process.`;
+      } else if (candidatesWithInterviews.length === 1) {
+        const candidate = candidatesWithInterviews[0];
+        feedbackMessage = `Hi ${interviewerName}, could you please provide feedback on your interview with ${candidate.name}? We'd love to hear your thoughts on their technical skills, communication, and overall fit for the role.`;
+      } else {
+        const candidateNames = candidatesWithInterviews.map(c => c.name).join(', ');
+        feedbackMessage = `Hi ${interviewerName}, could you please provide feedback on your recent interviews with ${candidateNames}? Your insights on their technical skills, communication, and cultural fit would be very helpful.`;
+      }
+
+      // Store the message and target for confirmation
+      const targetCandidateId = candidatesWithInterviews.length > 0
+        ? candidatesWithInterviews[0].id
+        : allCandidates[0]?.id;
+
+      setFeedbackRequestMessage(feedbackMessage);
+      setFeedbackRequestTarget({
+        candidateId: targetCandidateId,
+        candidates: candidatesWithInterviews
+      });
+      setShowFeedbackRequestModal(true);
+
+    } catch (error) {
+      console.error('Failed to generate feedback request:', error);
+      alert('Failed to generate feedback request. Please try again.');
+    }
+  };
+
+  const confirmSendFeedbackRequest = async () => {
+    if (!feedbackRequestTarget?.candidateId || !selectedConversation) return;
+
+    try {
+      // Send the feedback request
+      // For internal messages, sender_id should be the internal member's ID (who we're messaging)
+      // Use sender_type: 'recruiter' so it displays as "sent by you" (blue)
+      await axios.post(`${API_BASE}/messages`, {
+        candidate_id: parseInt(feedbackRequestTarget.candidateId),
+        content: feedbackRequestMessage,
+        sender_id: selectedConversation.id, // Use the internal member's ID
+        sender_type: 'recruiter',
+        message_type: 'text',
+        is_internal: true
+      });
+
+      // Add the request message to the current conversation
+      const requestMessage: Message = {
+        id: `msg-${Date.now()}`,
+        senderId: 'recruiter',
+        senderType: 'recruiter', // Mark as from recruiter for blue styling
+        text: feedbackRequestMessage,
+        timestamp: 'Just now',
+        type: 'text',
+      };
+
+      setSelectedConversation(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          messages: [...prev.messages, requestMessage],
+          lastMessage: feedbackRequestMessage.substring(0, 60) + '...',
+          timestamp: 'Just now',
+        };
+      });
+
+      setShowFeedbackRequestModal(false);
+      setFeedbackRequestMessage('');
+
+      // Auto-generate feedback response after 2-3 seconds
+      const delay = Math.random() * 1000 + 2000; // 2-3 seconds
+      setTimeout(async () => {
+        try {
+          // Re-fetch candidates to get the most up-to-date interview assignments
+          const candidatesResponse = await axios.get(`${API_BASE}/candidates`);
+          const allCandidates = candidatesResponse.data;
+          const interviewerId = selectedConversation.id;
+
+          const candidatesWithInterviews: any[] = [];
+          console.log('Looking for interviews assigned to:', interviewerId);
+
+          for (const candidate of allCandidates) {
+            try {
+              const eventsResponse = await axios.get(`${API_BASE}/candidates/${candidate.id}/events`);
+              const events = eventsResponse.data;
+
+              if (events.length > 0) {
+                console.log(`Candidate ${candidate.name} has ${events.length} event(s):`, events.map((e: any) => ({
+                  title: e.title,
+                  assigned_interviewer_id: e.assigned_interviewer_id,
+                  type: typeof e.assigned_interviewer_id
+                })));
+              }
+
+              // Check if this interviewer was assigned to any events for this candidate
+              const hasAssignedEvents = events.some((event: any) => event.assigned_interviewer_id === interviewerId);
+
+              if (hasAssignedEvents) {
+                console.log(`Found match! ${candidate.name} was interviewed by ${interviewerId}`);
+                candidatesWithInterviews.push(candidate);
+              }
+            } catch (err) {
+              // Skip candidates with errors
+            }
+          }
+
+          console.log('Total candidates with interviews:', candidatesWithInterviews.length);
+
+          if (candidatesWithInterviews.length === 0) {
+            // No candidates assigned - send a "no feedback" response
+            const noFeedbackMessage = `I haven't conducted any interviews recently that need feedback. Let me know if there are any specific candidates you'd like me to review!`;
+
+            await axios.post(`${API_BASE}/messages`, {
+              candidate_id: parseInt(feedbackRequestTarget.candidateId),
+              content: noFeedbackMessage,
+              sender_id: interviewerId,
+              sender_type: 'internal',
+              message_type: 'text',
+              is_internal: true
+            });
+
+            // Add to UI immediately
+            setSelectedConversation(prev => {
+              if (!prev || prev.id !== interviewerId) return prev;
+
+              const newMsg: Message = {
+                id: `msg-${Date.now()}`,
+                senderId: interviewerId,
+                senderType: 'internal', // Mark as from internal member (gray)
+                text: noFeedbackMessage,
+                timestamp: 'Just now',
+                type: 'text',
+              };
+
+              return {
+                ...prev,
+                messages: [...prev.messages, newMsg],
+                lastMessage: noFeedbackMessage.substring(0, 60) + '...',
+                timestamp: 'Just now',
+              };
+            });
+
+          } else {
+            // Has candidates - generate feedback for each
+            const feedbackMessages: Message[] = [];
+
+            for (const candidate of candidatesWithInterviews) {
+              const feedbackRating = Math.floor(Math.random() * 2) + 4; // 4-5 stars
+              const recommendations = ['strong-yes', 'yes', 'strong-yes'];
+              const recommendation = recommendations[Math.floor(Math.random() * recommendations.length)];
+
+              const feedbackTemplates = [
+                `I had a great interview with ${candidate.name}. They demonstrated strong technical skills and excellent communication. Their approach to problem-solving was methodical and they asked insightful questions. I'd recommend moving forward.`,
+                `${candidate.name} showed solid understanding of the role requirements. They have good experience and seem like they'd fit well with the team culture. Definitely worth progressing to the next round.`,
+                `Really impressed with ${candidate.name}'s technical depth and passion for the work. They have relevant experience and I think they'd be a strong addition to the team. Strong yes from me.`,
+                `${candidate.name} did well in the interview. Good technical foundation and clear communication style. They seem motivated and eager to learn. I'd recommend proceeding.`
+              ];
+
+              const feedbackComment = feedbackTemplates[Math.floor(Math.random() * feedbackTemplates.length)];
+              const feedbackSummary = `Feedback for ${candidate.name}: ${recommendation.replace('-', ' ')} (${feedbackRating}/5 ⭐)\n\n${feedbackComment}`;
+
+              // Submit the actual feedback to backend
+              await axios.post(`${API_BASE}/feedback/submit-as-message`, {
+                candidate_id: candidate.id,
+                interviewer_id: interviewerId,
+                stage: 'Round 1',
+                rating: feedbackRating,
+                recommendation: recommendation,
+                technical_skills: feedbackRating,
+                communication: feedbackRating,
+                culture_fit: feedbackRating,
+                comments: feedbackComment,
+                strengths: ['Technical skills', 'Communication', 'Problem solving'],
+                concerns: []
+              });
+
+              // Send feedback as internal message
+              await axios.post(`${API_BASE}/messages`, {
+                candidate_id: candidate.id,
+                content: feedbackSummary,
+                sender_id: interviewerId,
+                sender_type: 'internal',
+                message_type: 'text',
+                is_internal: true
+              });
+
+              // Add to UI messages array
+              feedbackMessages.push({
+                id: `feedback-${candidate.id}-${Date.now()}`,
+                senderId: interviewerId,
+                senderType: 'internal', // Mark as from internal member (gray)
+                text: feedbackSummary,
+                timestamp: 'Just now',
+                type: 'text',
+              });
+            }
+
+            // Update conversation with all feedback messages
+            setSelectedConversation(prev => {
+              if (!prev || prev.id !== interviewerId) return prev;
+
+              return {
+                ...prev,
+                messages: [...prev.messages, ...feedbackMessages],
+                lastMessage: feedbackMessages[feedbackMessages.length - 1]?.text.substring(0, 60) + '...',
+                timestamp: 'Just now',
+              };
+            });
+          }
+
+          console.log('Auto-feedback generated successfully');
+
+        } catch (error) {
+          console.error('Failed to auto-generate feedback:', error);
+        }
+      }, delay);
+
+      setFeedbackRequestTarget(null);
+      alert('Feedback request sent! The interviewer will respond shortly.');
+
+    } catch (error) {
+      console.error('Failed to send feedback request:', error);
+      alert('Failed to send feedback request. Please try again.');
+    }
   };
 
   const handleGenerateAIMessage = async (messageType: string) => {
@@ -1275,9 +1866,12 @@ Deliverables:
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {selectedConversation.messages.map((message) => {
-            const isRecruiter = message.senderId === 'recruiter';
+            // For internal conversations, check senderType. For regular, check senderId
+            const isRecruiter = selectedConversation.isInternal
+              ? message.senderType === 'recruiter'
+              : message.senderId === 'recruiter';
 
             if (message.type === 'meeting' && message.meetingData) {
               return (
@@ -1409,37 +2003,47 @@ Deliverables:
             </div>
           )}
 
-          {activeTab === 'internal' && (
+          {activeTab === 'internal' && selectedConversation && (
             <div className="flex gap-2 mb-3">
               <button
-                onClick={() => setShowFeedbackModal(true)}
+                onClick={() => handleRequestFeedback()}
                 className="flex-1 px-3 py-2 bg-gradient-to-r from-green-500/20 to-emerald-500/20 hover:from-green-500/30 hover:to-emerald-500/30 border border-green-500/30 rounded-lg text-sm transition-all flex items-center justify-center gap-2 text-green-400"
               >
                 <MessageSquare className="w-4 h-4" />
-                Send Feedback
+                Request Feedback
               </button>
             </div>
           )}
 
-          <div className="flex gap-2">
-            <button className="p-3 hover:bg-gray-900/60 rounded-lg transition-all">
-              <Paperclip className="w-5 h-5 text-gray-400" />
-            </button>
-            <input
-              type="text"
-              value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Type a message..."
-              className="flex-1 px-4 py-3 bg-gray-900/60 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-            />
-            <button
-              onClick={handleSendMessage}
-              className="p-3 bg-blue-500 hover:bg-blue-600 rounded-xl transition-all"
-            >
-              <Send className="w-5 h-5" />
-            </button>
-          </div>
+          {selectedConversation?.isInternal ? (
+            // Read-only for internal conversations
+            <div className="flex items-center justify-center py-4 px-6 bg-gray-900/40 border border-gray-800 rounded-xl">
+              <p className="text-sm text-gray-500">
+                Internal conversation with {selectedConversation.name}. Feedback requests are auto-responded.
+              </p>
+            </div>
+          ) : (
+            // Regular message input for candidate conversations
+            <div className="flex gap-2">
+              <button className="p-3 hover:bg-gray-900/60 rounded-lg transition-all">
+                <Paperclip className="w-5 h-5 text-gray-400" />
+              </button>
+              <input
+                type="text"
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                placeholder="Type a message..."
+                className="flex-1 px-4 py-3 bg-gray-900/60 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+              <button
+                onClick={handleSendMessage}
+                className="p-3 bg-blue-500 hover:bg-blue-600 rounded-xl transition-all"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Schedule Modal */}
@@ -1492,6 +2096,28 @@ Deliverables:
                 </div>
 
                 <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    <User className="inline w-4 h-4 mr-1" />
+                    Assign Interviewer
+                  </label>
+                  <select
+                    value={meetingInterviewer}
+                    onChange={(e) => setMeetingInterviewer(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-900/50 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  >
+                    <option value="">Select interviewer...</option>
+                    {USER_PERSONAS.map((persona) => (
+                      <option key={persona.id} value={persona.id}>
+                        {persona.name.replace('You (', '').replace(')', '')} - {persona.role}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-2">
+                    This interviewer will be assigned to provide feedback after the meeting
+                  </p>
+                </div>
+
+                <div>
                   <label className="block text-sm text-gray-400 mb-2">Type</label>
                   <div className="flex gap-3">
                     <button
@@ -1527,9 +2153,10 @@ Deliverables:
                 </button>
                 <button
                   onClick={handleScheduleMeeting}
-                  className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors"
+                  disabled={!meetingDate || !meetingTime || !meetingInterviewer || isSchedulingMeeting}
+                  className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Send Invite
+                  {isSchedulingMeeting ? 'Scheduling...' : 'Send Invite'}
                 </button>
               </div>
             </div>
@@ -1677,47 +2304,148 @@ Deliverables:
                 </button>
               </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">Candidate</label>
-                  <select
-                    value={feedbackCandidate}
-                    onChange={(e) => setFeedbackCandidate(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-900/50 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  >
-                    <option value="">Select a candidate...</option>
-                    <option value="priya">Priya Patel - Senior Frontend Engineer</option>
-                    <option value="sophie">Sophie Turner - Backend Engineer</option>
-                    <option value="alex">Alex Rivera - Backend Engineer</option>
-                  </select>
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Candidate *</label>
+                    <select
+                      value={feedbackCandidate}
+                      onChange={(e) => setFeedbackCandidate(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-900/50 border border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      <option value="">Select candidate...</option>
+                      {realCandidateConversations.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Interview Stage *</label>
+                    <select
+                      value={feedbackStage}
+                      onChange={(e) => setFeedbackStage(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-900/50 border border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      <option value="Screening">Screening</option>
+                      <option value="Round 1">Round 1</option>
+                      <option value="Round 2">Round 2</option>
+                      <option value="Final">Final</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Rating (1-5)</label>
+                  <label className="block text-sm text-gray-400 mb-2">Overall Rating (1-5) *</label>
                   <div className="flex gap-2">
                     {[1, 2, 3, 4, 5].map((rating) => (
                       <button
                         key={rating}
+                        type="button"
                         onClick={() => setFeedbackRating(rating)}
-                        className={`flex-1 px-4 py-3 rounded-xl transition-all ${rating <= feedbackRating
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm transition-all ${
+                          rating <= feedbackRating
                             ? 'bg-yellow-500/20 border border-yellow-500/30 text-yellow-400'
-                            : 'bg-gray-900/50 border border-gray-800'
-                          }`}
+                            : 'bg-gray-900/50 border border-gray-800 text-gray-500'
+                        }`}
                       >
-                        {rating}
+                        {rating}⭐
                       </button>
                     ))}
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Recommendation</label>
+                  <label className="block text-sm text-gray-400 mb-2">Recommendation *</label>
+                  <div className="grid grid-cols-5 gap-2">
+                    {[
+                      { value: 'strong-yes', label: 'Strong Yes', color: 'green' },
+                      { value: 'yes', label: 'Yes', color: 'blue' },
+                      { value: 'maybe', label: 'Maybe', color: 'yellow' },
+                      { value: 'no', label: 'No', color: 'orange' },
+                      { value: 'strong-no', label: 'Strong No', color: 'red' }
+                    ].map((rec) => (
+                      <button
+                        key={rec.value}
+                        type="button"
+                        onClick={() => setFeedbackRecommendation(rec.value)}
+                        className={`px-3 py-2 rounded-lg text-xs transition-all ${
+                          feedbackRecommendation === rec.value
+                            ? `bg-${rec.color}-500/20 border border-${rec.color}-500/30 text-${rec.color}-400`
+                            : 'bg-gray-900/50 border border-gray-800 text-gray-500'
+                        }`}
+                      >
+                        {rec.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Technical Skills *</label>
+                    <select
+                      value={feedbackTechnical}
+                      onChange={(e) => setFeedbackTechnical(parseInt(e.target.value))}
+                      className="w-full px-3 py-2 bg-gray-900/50 border border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Communication *</label>
+                    <select
+                      value={feedbackCommunication}
+                      onChange={(e) => setFeedbackCommunication(parseInt(e.target.value))}
+                      className="w-full px-3 py-2 bg-gray-900/50 border border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Culture Fit *</label>
+                    <select
+                      value={feedbackCulture}
+                      onChange={(e) => setFeedbackCulture(parseInt(e.target.value))}
+                      className="w-full px-3 py-2 bg-gray-900/50 border border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Interview Comments *</label>
                   <textarea
-                    value={feedbackRecommendation}
-                    onChange={(e) => setFeedbackRecommendation(e.target.value)}
-                    placeholder="Share your feedback and recommendation..."
+                    value={feedbackComments}
+                    onChange={(e) => setFeedbackComments(e.target.value)}
+                    placeholder="Share detailed feedback about the interview..."
                     rows={4}
-                    className="w-full px-4 py-3 bg-gray-900/50 border border-gray-800 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    className="w-full px-3 py-2 bg-gray-900/50 border border-gray-800 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Strengths (comma-separated)</label>
+                  <input
+                    type="text"
+                    value={feedbackStrengths}
+                    onChange={(e) => setFeedbackStrengths(e.target.value)}
+                    placeholder="e.g. Strong React knowledge, Good problem solver"
+                    className="w-full px-3 py-2 bg-gray-900/50 border border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Concerns (comma-separated)</label>
+                  <input
+                    type="text"
+                    value={feedbackConcerns}
+                    onChange={(e) => setFeedbackConcerns(e.target.value)}
+                    placeholder="e.g. Limited system design experience, Needs more depth"
+                    className="w-full px-3 py-2 bg-gray-900/50 border border-gray-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   />
                 </div>
               </div>
@@ -1798,6 +2526,65 @@ Deliverables:
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Feedback Request Confirmation Modal */}
+        {showFeedbackRequestModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-lg w-full">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl">Confirm Feedback Request</h3>
+                <button
+                  onClick={() => {
+                    setShowFeedbackRequestModal(false);
+                    setFeedbackRequestMessage('');
+                    setFeedbackRequestTarget(null);
+                  }}
+                  className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="mb-6">
+                <p className="text-sm text-gray-400 mb-3">You're about to send this feedback request:</p>
+                <div className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+                  <p className="text-sm text-gray-300 whitespace-pre-wrap">{feedbackRequestMessage}</p>
+                </div>
+                {feedbackRequestTarget?.candidates && feedbackRequestTarget.candidates.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs text-gray-500 mb-2">Requesting feedback for:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {feedbackRequestTarget.candidates.map((candidate: any) => (
+                        <span key={candidate.id} className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded-lg border border-blue-500/30">
+                          {candidate.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowFeedbackRequestModal(false);
+                    setFeedbackRequestMessage('');
+                    setFeedbackRequestTarget(null);
+                  }}
+                  className="flex-1 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmSendFeedbackRequest}
+                  className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-colors"
+                >
+                  Send Request
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1931,32 +2718,11 @@ Deliverables:
         {filteredConversations.map((conversation: any) => (
           <button
             key={conversation.id}
-            onClick={async () => {
+            onClick={() => {
               if (conversation.isSearchResult) {
                 handleOpenCandidateConversation(conversation.id);
               } else {
                 setSelectedConversation(conversation);
-                // Load messages from API when conversation is selected
-                setTimeout(async () => {
-                  try {
-                    const response = await axios.get(`${API_BASE}/candidates/${conversation.id}/messages`);
-                    const apiMessages = response.data;
-
-                    if (apiMessages.length > 0) {
-                      const formattedMessages: Message[] = apiMessages.map((msg: any) => ({
-                        id: msg.id.toString(),
-                        senderId: msg.sender_type === 'recruiter' ? msg.sender_id : msg.candidate_id.toString(),
-                        text: msg.content,
-                        timestamp: formatTimestamp(msg.created_at),
-                        type: msg.message_type as 'text' | 'meeting' | 'assessment' | 'feedback',
-                      }));
-
-                      setSelectedConversation(prev => prev ? { ...prev, messages: formattedMessages } : null);
-                    }
-                  } catch (error) {
-                    console.error('Failed to load messages:', error);
-                  }
-                }, 100);
               }
             }}
             className="w-full p-4 border-b border-gray-800/50 hover:bg-gradient-to-r hover:from-gray-900/40 hover:to-transparent transition-all text-left group"

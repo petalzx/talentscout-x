@@ -3,8 +3,9 @@ import { CandidateFeed } from './components/CandidateFeed';
 import { CandidateProfile } from './components/CandidateProfile';
 import { Pipeline } from './components/Pipeline';
 import { Messages } from './components/Messages';
+import { Feedback } from './components/Feedback';
 import { Settings as SettingsComponent } from './components/Settings';
-import { Search, Users, Briefcase, MessageCircle, Settings, LogOut } from 'lucide-react';
+import { Search, Users, Briefcase, MessageCircle, Settings, LogOut, ThumbsUp } from 'lucide-react';
 import grokLogo from 'figma:asset/868077ec40f63747e6a75dda0a2da91f91b9a516.png';
 
 export default function App() {
@@ -42,6 +43,8 @@ export default function App() {
             onConversationOpened={() => setMessagesCandidateId(null)}
           />
         );
+      case 'feedback':
+        return <Feedback onSelectCandidate={setSelectedCandidate} />;
       case 'settings':
         return <SettingsComponent />;
       default:
@@ -113,6 +116,21 @@ export default function App() {
             <MessageCircle className="w-5 h-5" strokeWidth={2} />
             <span>Messages</span>
             <span className="ml-auto px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full text-xs">3</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('feedback');
+              setSelectedCandidate(null);
+            }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all mb-2 ${
+              activeTab === 'feedback'
+                ? 'bg-gradient-to-r from-blue-500/20 to-blue-500/10 text-blue-400 border border-blue-500/30'
+                : 'text-gray-400 hover:text-gray-300 hover:bg-gray-900/60'
+            }`}
+          >
+            <ThumbsUp className="w-5 h-5" strokeWidth={2} />
+            <span>Feedback</span>
           </button>
 
           <div className="h-px bg-gray-800/50 my-4"></div>

@@ -485,6 +485,7 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
       {showSchedule && (
         <ScheduleModal
           candidateName={profile.name}
+          candidateId={candidateId}
           onClose={() => setShowSchedule(false)}
         />
       )}
