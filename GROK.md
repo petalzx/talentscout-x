@@ -8,7 +8,7 @@ TalentScout X is an MVP iOS-first app for recruiters to source technical talent 
 - **Backend**: Modular Python FastAPI (`app/main.py`):
   - **Routers**: `/api/v1/scout` (app/routers/scout.py).
   - **Services**: Ingestion (Tweepy X API v2 or mock profiles, app/services/ingestion.py); AI ranking (OpenAI SDK for xAI Grok-beta, strict JSON output, app/services/ai_service.py).
-  - **DB**: aiosqlite (`dev.db` auto-created; Search/Candidate tables with FK, app/db/database.py).
+  - **DB**: Prisma ORM (schema.prisma SQLite; type-safe create/find, app/db/database.py).
   - **Config**: pydantic-settings (env validation, app/config/settings.py).
   - **Models**: Pydantic ScoutRequest/CandidateMatch (app/models/scout.py).
 - **External**: X API (Bearer token optional); xAI Grok (key required).
@@ -33,15 +33,25 @@ TalentScout X is an MVP iOS-first app for recruiters to source technical talent 
 app/
 ├── main.py (FastAPI app, routers include)
 ├── config/settings.py (env)
-├── db/database.py (aiosqlite connect/init)
+├── db/database.py (Prisma ORM connect)
 ├── models/scout.py (Pydantic I/O)
 ├── routers/scout.py (endpoint logic)
 └── services/ {ingestion.py (X fetch), ai_service.py (Grok rank)}
+frontend/ (React TS Vite app for visuals)
+├── src/App.tsx (form, API call, list/chart)
+├── package.json (recharts/axios)
 tests/ test_scout.py (API test)
+scripts/ populate.py (scale concurrent calls)
+schema.prisma (Prisma DB schema)
 pyproject.toml (deps, pytest config)
 requirements.txt (core deps)
-README.md (full setup, iOS code)
+README.md (setup, iOS/React run)
 ```
+
+## Scale & Frontend
+- **Concurrent Users**: scripts/populate.py tests 100 async scout calls (local OK; 1000+ with Postgres via Prisma DATABASE_URL).
+- **Visual Frontend**: React TS (/frontend; npm run dev) – Form → API → Ranked list + recharts bar chart (scores viz). .env.local VITE_API_URL=backend.
+- **Prisma DB**: Type-safe ORM (SQLite local; scale to Postgres free tiers like Supabase).
 
 ## Best Practices & Extensibility
 - **Modular**: Separation for tests/maintenance (add auth? new service?).
