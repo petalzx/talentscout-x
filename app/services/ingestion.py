@@ -81,4 +81,4 @@ async def get_profiles(role_title: str, keywords: List[str], location_filter: Op
             # Fallback mock
             profiles = ["@fallback_dev: Sample profile for demo."]
 
-    return profiles[:10]  # Limit for AI tokens
+    return profiles  # Top 20 enriched (large scale)
