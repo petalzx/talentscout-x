@@ -1,5 +1,8 @@
 import os
-from xdk import Client  # pip install xdk-python or equivalent? Wait, pasted xdk – Assume tweepy or requests for PKCE
+# Note: xdk not standard – Use requests for PKCE (pasted simplified)
+import requests
+import urllib.parse
+import os
 # Simplified OAuth2 PKCE for user token (pasted thread code)
 # Run to authorize browser, get token for .env TWITTER_USER_ACCESS_TOKEN
 

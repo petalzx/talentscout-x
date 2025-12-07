@@ -4,6 +4,7 @@ prisma==0.15.0  # ORM
 tweepy==4.16.0  # For OAuth2 user context fallback (/2/users/search)
 
 httpx==0.27.2
+requests==2.32.3  # For OAuth2 PKCE script
 python-dotenv==1.0.1
 pydantic-settings==2.5.2
 pytest==8.3.3
