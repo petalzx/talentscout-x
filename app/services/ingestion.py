@@ -26,7 +26,10 @@ async def get_profiles(role_title: str, keywords: List[str], location_filter: Op
             query_enc = urllib.parse.quote(query)
             tweets_url = f"https://api.twitter.com/2/tweets/search/recent?query={query_enc}&max_results={max_results}&tweet.fields=author_id,created_at,public_metrics"
             tweets_resp = await client.get(tweets_url, headers=headers)
-            print(f"Tweets status: {tweets_resp.status_code}")
+            print(f"Tweets endpoint status: {tweets_resp.status_code} – {tweets_url}")
+            if tweets_resp.status_code != 200:
+                print(f"Error body: {tweets_resp.text}")
+                return []  # Real only
             tweets_resp.raise_for_status()
             tweets_data = tweets_resp.json()
             tweets = tweets_data.get("data", [])
