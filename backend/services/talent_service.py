@@ -30,8 +30,14 @@ class TalentService:
 
         # 2. Get recent tweets for candidates (limit to first N)
         limited_users = users[:settings.MAX_CANDIDATES_PER_SEARCH]
+
+        # Fetch detailed tweets for each user (for storing in DB)
+        user_tweets_map = {}
         for user in limited_users:
             user.recent_tweet = await self.twitter_service.get_recent_tweet(user.id)
+            # Also fetch detailed tweets for storing
+            tweets = await self.twitter_service.get_recent_tweets_detailed(user.id, max_count=5)
+            user_tweets_map[user.id] = tweets
 
         # 3. Create search session
         session = await self.prisma.searchsession.create({
@@ -54,23 +60,44 @@ class TalentService:
                 data={
                     "create": {
                         "handle": user.username,
+                        "twitterId": user.id,
                         "name": user.name,
                         "bio": user.description,
                         "followers": user.followers_count,
+                        "following": user.following_count,
                         "avatar": user.profile_image_url,
                         "headerImage": user.profile_banner_url or None,
                         "recentTweet": user.recent_tweet
                     },
                     "update": {
+                        "twitterId": user.id,
                         "name": user.name,
                         "bio": user.description,
                         "followers": user.followers_count,
+                        "following": user.following_count,
                         "avatar": user.profile_image_url,
                         "headerImage": user.profile_banner_url or None,
                         "recentTweet": user.recent_tweet
                     }
                 }
             )
+
+            # Save tweets to database
+            if user.id in user_tweets_map and user_tweets_map[user.id]:
+                # Delete old tweets for this candidate first
+                await self.prisma.tweet.delete_many(where={"candidateId": candidate.id})
+
+                # Save new tweets
+                for tweet in user_tweets_map[user.id]:
+                    await self.prisma.tweet.create({
+                        "tweetId": tweet["id"],
+                        "content": tweet["content"],
+                        "likes": tweet["likes"],
+                        "retweets": tweet["retweets"],
+                        "replies": tweet["replies"],
+                        "createdAt": tweet["created_at"],
+                        "candidateId": candidate.id
+                    })
 
             # Save search result
             await self.prisma.searchresult.create({
@@ -107,6 +134,7 @@ class TalentService:
                 avatar=candidate.avatar or "https://via.placeholder.com/100",
                 bio=candidate.bio or "No bio available",
                 followers=self._format_number(candidate.followers or 0),
+                following=self._format_number(candidate.following or 0),
                 match=result["score"],
                 tags=found_skills[:4] if found_skills else ["Developer"],
                 recent_post=candidate.recentTweet or "No recent posts",
@@ -157,6 +185,7 @@ class TalentService:
                 avatar=candidate.avatar or "https://via.placeholder.com/100",
                 bio=candidate.bio or "No bio available",
                 followers=self._format_number(candidate.followers or 0),
+                following=self._format_number(candidate.following or 0),
                 match=result["score"],
                 tags=found_skills[:4] if found_skills else ["Developer"],
                 recent_post=candidate.recentTweet or "No recent posts",
@@ -178,8 +207,7 @@ class TalentService:
     async def get_candidate_profile(self, candidate_id: int) -> Optional[DetailedCandidateResponse]:
         """Get detailed candidate profile with tweets and AI insights"""
 
-        # Get candidate with their best search result
-        # Note: Explicitly select all fields including headerImage
+        # Get candidate with their best search result and tweets from database
         candidate = await self.prisma.candidate.find_unique(
             where={"id": candidate_id},
             include={
@@ -187,7 +215,8 @@ class TalentService:
                     "include": {"session": True},
                     "order_by": [{"score": "desc"}],
                     "take": 1
-                }
+                },
+                "tweets": True  # Include tweets from database
             }
         )
 
@@ -196,10 +225,28 @@ class TalentService:
 
         best_result = candidate.searches[0]
 
-        # Fetch recent tweets with engagement metrics
-        # Note: We need the Twitter user ID, which we should have stored
-        # For now, we'll work with what we have in the database
+        # Use tweets from database (instant, no API call needed!)
         recent_posts = []
+        if candidate.tweets:
+            recent_posts = [TweetResponse(
+                id=tweet.tweetId,
+                content=tweet.content,
+                likes=tweet.likes,
+                retweets=tweet.retweets,
+                replies=tweet.replies,
+                created_at=tweet.createdAt
+            ) for tweet in candidate.tweets]
+
+        # Fallback to stored tweet if no tweets in database
+        if not recent_posts and candidate.recentTweet and candidate.recentTweet != "No recent tweets":
+            recent_posts.append(TweetResponse(
+                id="1",
+                content=candidate.recentTweet,
+                likes=0,
+                retweets=0,
+                replies=0,
+                created_at=datetime.now().isoformat()
+            ))
 
         # Extract skills from bio
         bio_lower = candidate.bio.lower() if candidate.bio else ""
@@ -234,21 +281,6 @@ class TalentService:
             else:
                 insights = ["Limited information available for assessment"]
 
-        # Mock recent posts (since we only store one tweet currently)
-        if candidate.recentTweet and candidate.recentTweet != "No recent tweets":
-            recent_posts.append(TweetResponse(
-                id="1",
-                content=candidate.recentTweet,
-                likes=0,
-                retweets=0,
-                replies=0,
-                created_at=datetime.now().isoformat()
-            ))
-
-        # Debug: Check what headerImage value we have
-        print(f"DEBUG: candidate.headerImage = {candidate.headerImage}")
-        print(f"DEBUG: hasattr headerImage = {hasattr(candidate, 'headerImage')}")
-
         return DetailedCandidateResponse(
             id=str(candidate.id),
             name=candidate.name or candidate.handle,
@@ -256,7 +288,7 @@ class TalentService:
             avatar=candidate.avatar or "https://via.placeholder.com/100",
             bio=candidate.bio or "No bio available",
             followers=self._format_number(candidate.followers or 0),
-            following="0",
+            following=self._format_number(candidate.following or 0),
             match=best_result.score,
             tags=found_skills[:6] if found_skills else ["Developer"],
             roles=[best_result.session.jobTitle],

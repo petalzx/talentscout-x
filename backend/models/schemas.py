@@ -26,6 +26,7 @@ class TwitterUser(BaseModel):
     name: str
     description: str = ""
     followers_count: int = 0
+    following_count: int = 0
     profile_image_url: str = ""
     profile_banner_url: str = ""
     recent_tweet: str = ""

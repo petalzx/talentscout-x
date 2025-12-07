@@ -10,14 +10,17 @@ datasource db {
 model Candidate {
   id          Int      @id @default(autoincrement())
   handle      String   @unique
+  twitterId   String?  // Twitter user ID for API calls
   name        String?
   bio         String?
   followers   Int?
+  following   Int?     // Following count
   avatar      String?
   headerImage String?
   recentTweet String?
   createdAt   DateTime @default(now())
   searches    SearchResult[]
+  tweets      Tweet[]
 
   @@map("Candidate")
 }
@@ -42,4 +45,18 @@ model SearchResult {
   session     SearchSession @relation(fields: [sessionId], references: [id])
 
   @@map("SearchResult")
+}
+
+model Tweet {
+  id          Int      @id @default(autoincrement())
+  tweetId     String   // Twitter's tweet ID
+  content     String
+  likes       Int      @default(0)
+  retweets    Int      @default(0)
+  replies     Int      @default(0)
+  createdAt   String   // ISO timestamp from Twitter
+  candidateId Int
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+
+  @@map("Tweet")
 }

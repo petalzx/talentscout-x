@@ -142,6 +142,7 @@ class TwitterService:
                         name=user.get("name", user["username"]),
                         description=user.get("description", ""),
                         followers_count=user.get("public_metrics", {}).get("followers_count", 0),
+                        following_count=user.get("public_metrics", {}).get("following_count", 0),
                         profile_image_url=self._upgrade_image_quality(user.get("profile_image_url", "")),
                         profile_banner_url="",  # Will be enriched later
                     )
