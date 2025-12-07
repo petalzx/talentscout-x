@@ -7,6 +7,11 @@ from ..config.settings import settings
 async def get_profiles(role_title: str, keywords: List[str], location_filter: Optional[str] = None, limit: int = 20) -> List[str]:
     bearer_token = settings.twitter_bearer_token
     use_mock = not bearer_token or bearer_token == "your_twitter_bearer_token_here"
+    print(f"Token set: {bool(bearer_token and bearer_token != 'your_twitter_bearer_token_here')}")
+    if not use_mock:
+        print("Attempting real X API call...")
+    else:
+        print("Using mock (token invalid/missing)")
     
     profiles = []
     if use_mock:
