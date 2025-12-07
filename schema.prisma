@@ -1,0 +1,25 @@
+generator client {
+  provider = "prisma-client-py"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Search {
+  id         Int       @id @default(autoincrement())
+  role_title String
+  keywords   String
+  created_at DateTime  @default(now())
+  candidates Candidate[]
+}
+
+model Candidate {
+  id         Int     @id @default(autoincrement())
+  handle     String
+  match_score Int
+  reasoning  String
+  search_id  Int
+  search     Search  @relation(fields: [search_id], references: [id])
+}
