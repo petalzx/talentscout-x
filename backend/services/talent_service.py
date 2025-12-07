@@ -54,6 +54,9 @@ class TalentService:
         for user, scoring_result in zip(limited_users, scoring_results):
             print(f"Saving candidate: {user.username} (score: {scoring_result.score})")
 
+            # Auto-set pipeline stage to "Qualified" if score >= 75%
+            auto_pipeline_stage = "Qualified" if scoring_result.score >= 75 else None
+
             # Save candidate to database
             candidate = await self.prisma.candidate.upsert(
                 where={"handle": user.username},
@@ -67,7 +70,8 @@ class TalentService:
                         "following": user.following_count,
                         "avatar": user.profile_image_url,
                         "headerImage": user.profile_banner_url or None,
-                        "recentTweet": user.recent_tweet
+                        "recentTweet": user.recent_tweet,
+                        "pipelineStage": auto_pipeline_stage
                     },
                     "update": {
                         "twitterId": user.id,
@@ -78,6 +82,7 @@ class TalentService:
                         "avatar": user.profile_image_url,
                         "headerImage": user.profile_banner_url or None,
                         "recentTweet": user.recent_tweet
+                        # Don't update pipelineStage on update - preserve manual changes
                     }
                 }
             )
@@ -294,7 +299,20 @@ class TalentService:
             roles=[best_result.session.jobTitle],
             location=None,  # Not currently stored
             website=None,   # Not currently stored
-            header_image=candidate.headerImage,  # Now fetched from database
+            header_image=candidate.headerImage,
+            pipeline_stage=candidate.pipelineStage,
             insights=insights,
             recent_posts=recent_posts
         )
+
+    async def update_pipeline_stage(self, candidate_id: int, pipeline_stage: Optional[str]) -> bool:
+        """Update the pipeline stage for a candidate"""
+        try:
+            await self.prisma.candidate.update(
+                where={"id": candidate_id},
+                data={"pipelineStage": pipeline_stage}
+            )
+            return True
+        except Exception as e:
+            print(f"Error updating pipeline stage: {e}")
+            return False

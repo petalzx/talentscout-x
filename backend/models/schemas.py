@@ -57,5 +57,10 @@ class DetailedCandidateResponse(BaseModel):
     location: Optional[str] = None
     website: Optional[str] = None
     header_image: Optional[str] = None
+    pipeline_stage: Optional[str] = None
     insights: List[str]  # AI-generated reasoning points
     recent_posts: List[TweetResponse]
+
+class UpdatePipelineRequest(BaseModel):
+    candidate_id: int
+    pipeline_stage: Optional[str]  # null, "Qualified", "Screening", "Round 1", etc.

@@ -8,19 +8,20 @@ datasource db {
 }
 
 model Candidate {
-  id          Int      @id @default(autoincrement())
-  handle      String   @unique
-  twitterId   String?  // Twitter user ID for API calls
-  name        String?
-  bio         String?
-  followers   Int?
-  following   Int?     // Following count
-  avatar      String?
-  headerImage String?
-  recentTweet String?
-  createdAt   DateTime @default(now())
-  searches    SearchResult[]
-  tweets      Tweet[]
+  id             Int      @id @default(autoincrement())
+  handle         String   @unique
+  twitterId      String?  // Twitter user ID for API calls
+  name           String?
+  bio            String?
+  followers      Int?
+  following      Int?     // Following count
+  avatar         String?
+  headerImage    String?
+  recentTweet    String?
+  pipelineStage  String?  // Pipeline stage: null, "Qualified", "Screening", "Round 1", etc.
+  createdAt      DateTime @default(now())
+  searches       SearchResult[]
+  tweets         Tweet[]
 
   @@map("Candidate")
 }

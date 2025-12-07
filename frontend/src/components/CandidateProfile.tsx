@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Mail, MessageCircle, Star, TrendingUp, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Calendar, Mail, MessageCircle, Star, TrendingUp, ExternalLink, ThumbsUp, ArrowRight, X } from 'lucide-react';
 import { ScheduleModal } from './ScheduleModal';
 import axios from 'axios';
 
@@ -34,6 +34,7 @@ interface ProfileData {
   location?: string;
   website?: string;
   header_image?: string;
+  pipeline_stage?: string | null;
   insights: string[];
   recent_posts: TweetData[];
 }
@@ -44,10 +45,68 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [confirmationType, setConfirmationType] = useState<'advance' | 'reject'>('advance');
+  const [nextStage, setNextStage] = useState<string>('');
 
   useEffect(() => {
     loadProfile();
   }, [candidateId]);
+
+  useEffect(() => {
+    if (profile) {
+      setPipelineStage(profile.pipeline_stage || 'Discovered');
+    }
+  }, [profile]);
+
+  const stages = ['Discovered', 'Qualified', 'Screening', 'Round 1', 'Round 2', 'Final', 'Offer', 'Rejected'];
+
+  // Determine next stage
+  const getNextStage = (currentStage: string | null) => {
+    if (!currentStage) return 'Qualified';
+    const currentIndex = stages.indexOf(currentStage);
+    if (currentIndex === -1 || currentIndex >= stages.length - 1) return currentStage;
+    return stages[currentIndex + 1];
+  };
+
+  // Handle advancing to next stage
+  const handleAdvance = () => {
+    const next = getNextStage(pipelineStage);
+    setNextStage(next);
+    setConfirmationType('advance');
+    setShowConfirmation(true);
+  };
+
+  // Handle reject
+  const handleReject = () => {
+    setNextStage('Rejected');
+    setConfirmationType('reject');
+    setShowConfirmation(true);
+  };
+
+  // Confirm action
+  const confirmAction = async () => {
+    const oldStage = pipelineStage;
+    setPipelineStage(nextStage);
+    setShowConfirmation(false);
+
+    // Update backend
+    try {
+      await axios.put(`${API_BASE}/candidates/${candidateId}/pipeline`, {
+        candidate_id: parseInt(candidateId),
+        pipeline_stage: nextStage
+      });
+    } catch (err) {
+      console.error('Failed to update pipeline stage:', err);
+      // Revert on error
+      setPipelineStage(oldStage);
+    }
+  };
+
+  // Cancel action
+  const cancelAction = () => {
+    setShowConfirmation(false);
+  };
 
   const loadProfile = async () => {
     setIsLoading(true);
@@ -105,7 +164,78 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
     return 'Recently';
   };
 
-  const stages = ['Qualified', 'Screening', 'Round 1', 'Round 2', 'Final', 'Offer'];
+  // Get action buttons based on current stage
+  const getActionButtons = () => {
+    if (pipelineStage === 'Discovered') {
+      return (
+        <div className="flex gap-3">
+          <button
+            onClick={handleReject}
+            className="px-4 py-3 bg-gray-900/60 hover:bg-gray-800 text-gray-300 border border-gray-700/50 rounded-xl transition-all flex items-center justify-center gap-2"
+          >
+            <X className="w-4 h-4" />
+            Reject
+          </button>
+          <button
+            onClick={handleAdvance}
+            className="flex-1 px-4 py-3 bg-white hover:bg-gray-100 text-black border border-gray-700/50 rounded-xl transition-all flex items-center justify-center gap-2 font-semibold"
+          >
+            <ThumbsUp className="w-4 h-4" />
+            Mark as Qualified
+          </button>
+        </div>
+      );
+    } else if (pipelineStage === 'Qualified') {
+      return (
+        <div className="flex gap-3">
+          <button
+            onClick={handleReject}
+            className="px-4 py-3 bg-gray-900/60 hover:bg-gray-800 text-gray-300 border border-gray-700/50 rounded-xl transition-all flex items-center justify-center gap-2"
+          >
+            <X className="w-4 h-4" />
+            Reject
+          </button>
+          <button
+            onClick={handleAdvance}
+            className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all flex items-center justify-center gap-2 font-semibold shadow-lg shadow-blue-500/20"
+          >
+            <ArrowRight className="w-4 h-4" />
+            Add to Screening
+          </button>
+        </div>
+      );
+    } else if (pipelineStage === 'Screening' || pipelineStage === 'Round 1' || pipelineStage === 'Round 2' || pipelineStage === 'Final') {
+      return (
+        <div className="flex gap-3">
+          <button
+            onClick={handleReject}
+            className="px-4 py-3 bg-gray-900/60 hover:bg-gray-800 text-gray-300 border border-gray-700/50 rounded-xl transition-all flex items-center justify-center gap-2"
+          >
+            <X className="w-4 h-4" />
+            Reject
+          </button>
+          <button
+            onClick={handleAdvance}
+            className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all flex items-center justify-center gap-2 font-semibold shadow-lg shadow-blue-500/20"
+          >
+            <ArrowRight className="w-4 h-4" />
+            Advance to {getNextStage(pipelineStage)}
+          </button>
+        </div>
+      );
+    } else if (pipelineStage === 'Offer' || pipelineStage === 'Rejected') {
+      return (
+        <div className={`w-full px-4 py-3 rounded-xl text-center font-semibold ${
+          pipelineStage === 'Offer'
+            ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+            : 'bg-gray-900/60 text-gray-400 border border-gray-700/50'
+        }`}>
+          {pipelineStage}
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="flex flex-col h-full bg-black">
@@ -231,23 +361,11 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
           </div>
         </div>
 
-        {/* Pipeline Stage */}
+        {/* Current Pipeline Stage Display */}
         <div className="px-4 mb-4">
-          <h3 className="text-xs text-gray-500 mb-2">Pipeline Stage</h3>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-            {stages.map((stage) => (
-              <button
-                key={stage}
-                onClick={() => setPipelineStage(stage)}
-                className={`px-3 py-2 rounded-xl whitespace-nowrap transition-all text-sm ${
-                  pipelineStage === stage
-                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30'
-                    : 'bg-gray-900/60 text-gray-400 hover:bg-gray-800/80 border border-gray-800/50'
-                }`}
-              >
-                {stage}
-              </button>
-            ))}
+          <h3 className="text-xs text-gray-500 mb-2">Current Stage</h3>
+          <div className="px-4 py-2.5 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-xl">
+            <span className="text-blue-400 font-semibold">{pipelineStage || 'Discovered'}</span>
           </div>
         </div>
 
@@ -286,6 +404,61 @@ export function CandidateProfile({ candidateId, onBack, onNavigateToMessages }: 
           onClose={() => setShowSchedule(false)}
         />
       )}
+
+      {/* Confirmation Modal */}
+      {showConfirmation && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-sm w-full">
+            <div className="flex items-center gap-3 mb-4">
+              <img
+                src={profile.avatar}
+                alt={profile.name}
+                className="w-12 h-12 rounded-full ring-2 ring-gray-800"
+              />
+              <div className="flex-1">
+                <h3 className="font-semibold">{profile.name}</h3>
+                <p className="text-sm text-gray-400">{profile.handle}</p>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              {confirmationType === 'advance' ? (
+                <p className="text-gray-300">
+                  Move this candidate from <span className="text-blue-400 font-semibold">{pipelineStage}</span> to <span className="text-green-400 font-semibold">{nextStage}</span>?
+                </p>
+              ) : (
+                <p className="text-gray-300">
+                  Reject this candidate and move them to <span className="text-red-400 font-semibold">Rejected</span>?
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={cancelAction}
+                className="flex-1 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAction}
+                className={`flex-1 px-4 py-3 rounded-xl transition-colors ${
+                  confirmationType === 'advance'
+                    ? 'bg-blue-500 hover:bg-blue-600'
+                    : 'bg-red-500 hover:bg-red-600'
+                }`}
+              >
+                {confirmationType === 'advance' ? 'Advance' : 'Reject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="px-4 py-3 border-t border-gray-800/50 bg-gradient-to-b from-black/95 via-black to-black backdrop-blur-xl">
+        {getActionButtons()}
+      </div>
     </div>
   );
 }

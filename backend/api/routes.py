@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
-from ..models.schemas import ScoutRequest, CandidateResponse, DetailedCandidateResponse
+from ..models.schemas import ScoutRequest, CandidateResponse, DetailedCandidateResponse, UpdatePipelineRequest
 from ..services.talent_service import TalentService
 
 router = APIRouter()
@@ -69,4 +69,26 @@ async def scout_talent(request: ScoutRequest):
 
     except Exception as e:
         print(f"Scout endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.put("/candidates/{candidate_id}/pipeline")
+async def update_pipeline_stage(candidate_id: int, request: UpdatePipelineRequest):
+    """Update pipeline stage for a candidate"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        success = await talent_service.update_pipeline_stage(candidate_id, request.pipeline_stage)
+
+        await talent_service.prisma.disconnect()
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Failed to update pipeline stage")
+
+        return {"success": True, "pipeline_stage": request.pipeline_stage}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Update pipeline stage error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
