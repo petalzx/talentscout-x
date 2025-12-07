@@ -68,7 +68,9 @@ Profiles to evaluate (rank all):
                 headers=headers,
                 json=payload
             )
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                print(f"Grok API error {resp.status_code}: {resp.text}")
+                raise Exception(f"API error: {resp.status_code} - {resp.text}")
             data = resp.json()
             ai_content = data["choices"][0]["message"]["content"].strip()
             ai_json = json.loads(ai_content)
