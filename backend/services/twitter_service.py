@@ -236,3 +236,55 @@ class TwitterService:
         except Exception as e:
             print(f"Error getting detailed tweets for user {user_id}: {e}")
             return []
+
+    async def lookup_user_by_username(self, username: str) -> TwitterUser | None:
+        """Lookup a Twitter user by their username/handle"""
+        try:
+            # Remove @ if present
+            clean_username = username.lstrip('@')
+
+            async with httpx.AsyncClient() as client:
+                params = {
+                    "user.fields": "id,name,username,description,public_metrics,profile_image_url,profile_banner_url"
+                }
+
+                response = await client.get(
+                    f"{settings.TWITTER_BASE_URL}/users/by/username/{clean_username}",
+                    headers=self.headers,
+                    params=params
+                )
+
+                if response.status_code == 404:
+                    print(f"User @{clean_username} not found on Twitter")
+                    return None
+
+                if response.status_code != 200:
+                    print(f"Twitter API error: {response.status_code}")
+                    return None
+
+                data = response.json()
+                user_data = data.get("data")
+
+                if not user_data:
+                    return None
+
+                # Upgrade profile image quality
+                profile_image = self._upgrade_image_quality(user_data.get("profile_image_url", ""))
+
+                user = TwitterUser(
+                    id=user_data["id"],
+                    username=user_data["username"],
+                    name=user_data.get("name", ""),
+                    description=user_data.get("description", ""),
+                    followers_count=user_data.get("public_metrics", {}).get("followers_count", 0),
+                    following_count=user_data.get("public_metrics", {}).get("following_count", 0),
+                    profile_image_url=profile_image,
+                    profile_banner_url=user_data.get("profile_banner_url", "")
+                )
+
+                print(f"✓ Found user: @{user.username} ({user.name}) - {user.followers_count} followers")
+                return user
+
+        except Exception as e:
+            print(f"Error looking up user @{username}: {e}")
+            return None

@@ -314,6 +314,7 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   // All candidates from database (for candidate search mode)
   const [allCandidates, setAllCandidates] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Schedule meeting form
   const [meetingDate, setMeetingDate] = useState('');
@@ -324,6 +325,9 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   // Assessment form
   const [assessmentTitle, setAssessmentTitle] = useState('');
   const [assessmentTimeLimit, setAssessmentTimeLimit] = useState('no-limit');
+  const [assessmentTopic, setAssessmentTopic] = useState('');
+  const [isGeneratingAssessment, setIsGeneratingAssessment] = useState(false);
+  const [generatedAssessment, setGeneratedAssessment] = useState('');
 
   // Feedback form
   const [feedbackCandidate, setFeedbackCandidate] = useState('');
@@ -512,8 +516,12 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
       // Open the conversation
       console.log('Opening conversation:', conversation.name);
       console.log('Setting selected conversation to:', conversation);
-      setSelectedConversation(conversation);
-      setActiveTab('candidates');
+
+      // Small delay to ensure state is properly set
+      setTimeout(() => {
+        setSelectedConversation(conversation);
+        setActiveTab('candidates');
+      }, 0);
 
       // Notify parent that conversation was opened (this clears the trigger)
       if (onConversationOpened) {
@@ -528,6 +536,9 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
   // Debug selected conversation changes
   useEffect(() => {
     console.log('Selected conversation changed:', selectedConversation?.name || 'null');
+    if (selectedConversation === null) {
+      console.trace('Conversation set to null - stack trace:');
+    }
   }, [selectedConversation]);
 
   // Handle opening a conversation from candidate search results
@@ -635,29 +646,90 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
           isSearchResult: true,
         }));
     } else if (searchMode === 'username') {
-      // Search by Twitter username
-      return allCandidates
-        .filter((cand: any) =>
-          cand.handle.toLowerCase().includes(query)
-        )
-        .map((cand: any) => ({
-          id: cand.id,
-          name: cand.name,
-          handle: cand.handle,
-          avatar: cand.avatar,
-          role: cand.roles?.[0] || 'Developer',
-          lastMessage: cand.bio?.substring(0, 60) + '...' || 'No bio',
+      // Exact username lookup
+      // Remove @ if user included it
+      const cleanQuery = query.startsWith('@') ? query.substring(1) : query;
+
+      // Find exact match by handle
+      const exactMatch = allCandidates.find((cand: any) =>
+        cand.handle.toLowerCase() === cleanQuery.toLowerCase() ||
+        cand.handle.toLowerCase() === `@${cleanQuery.toLowerCase()}`
+      );
+
+      if (exactMatch) {
+        return [{
+          id: exactMatch.id,
+          name: exactMatch.name,
+          handle: exactMatch.handle,
+          avatar: exactMatch.avatar,
+          role: exactMatch.roles?.[0] || 'Developer',
+          lastMessage: exactMatch.bio?.substring(0, 60) + '...' || 'No bio',
           timestamp: '',
           unread: false,
           messages: [],
           isSearchResult: true,
-        }));
+        }];
+      } else if (cleanQuery.length > 0) {
+        // User has typed something but no match found - return empty with special marker
+        return [];
+      }
     }
 
     return currentConversations;
   };
 
   const filteredConversations = getFilteredResults();
+
+  // Handle username lookup via Twitter API
+  const handleUsernameLookup = async (username: string) => {
+    const cleanQuery = username.startsWith('@') ? username.substring(1) : username;
+
+    try {
+      setSearchError(null);
+      const response = await axios.get(`${API_BASE}/lookup/${cleanQuery}`);
+      const candidate = response.data;
+
+      // Add to allCandidates if not already there
+      setAllCandidates(prev => {
+        const exists = prev.find((c: any) => c.id === candidate.id);
+        if (exists) return prev;
+        return [...prev, candidate];
+      });
+
+      // Open conversation with the candidate
+      const conversation: Conversation = {
+        id: candidate.id,
+        name: candidate.name,
+        handle: candidate.handle,
+        avatar: candidate.avatar,
+        role: candidate.roles?.[0] || 'Developer',
+        lastMessage: candidate.bio?.substring(0, 60) + '...' || 'No bio',
+        timestamp: '',
+        unread: false,
+        messages: [],
+        isSearchResult: true,
+      };
+
+      // Add to conversations list if not already there
+      setRealCandidateConversations(prev => {
+        const exists = prev.find(c => String(c.id) === String(candidate.id));
+        if (exists) return prev;
+        return [conversation, ...prev]; // Add to beginning of list
+      });
+
+      setSelectedConversation(conversation);
+      onSelectCandidate(candidate.id);
+      setSearchQuery(''); // Clear search after finding user
+
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        setSearchError(`User @${cleanQuery} not found on Twitter`);
+      } else {
+        setSearchError(`Error looking up user: ${error.message}`);
+      }
+    }
+  };
+
 
   const handleSendMessage = async () => {
     if (!messageText.trim() || !selectedConversation) return;
@@ -687,8 +759,8 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
     });
 
     // Update in conversations list
-    setRealCandidateConversations(prev =>
-      prev.map(conv => {
+    setRealCandidateConversations((prev: Conversation[]) =>
+      prev.map((conv: Conversation) => {
         if (String(conv.id) === String(selectedConversation.id)) {
           return {
             ...conv,
@@ -788,6 +860,185 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
     setMeetingType('video');
   };
 
+  const handleGenerateAssessment = async () => {
+    if (!assessmentTopic.trim()) {
+      alert('Please select or enter a topic');
+      return;
+    }
+
+    setIsGeneratingAssessment(true);
+
+    // Simulate AI generation with a delay
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Generate assessment based on topic and candidate role
+    const role = selectedConversation?.role || 'Developer';
+    const assessments: Record<string, any> = {
+      'React': {
+        title: 'React Component Architecture Challenge',
+        description: `Build a reusable component library with the following requirements:
+
+1. Create a customizable Card component with variants (default, outlined, elevated)
+2. Implement a DataTable component with sorting, filtering, and pagination
+3. Build a Form component with validation using React Hook Form
+4. Add proper TypeScript types for all components
+5. Include Storybook documentation for each component
+
+Requirements:
+- Use React 18+ with TypeScript
+- Implement proper error boundaries
+- Add comprehensive unit tests (Jest + React Testing Library)
+- Follow accessibility best practices (ARIA labels, keyboard navigation)
+- Use CSS-in-JS or Tailwind for styling
+
+Deliverables:
+- GitHub repository with clean commit history
+- README with setup instructions
+- Live demo deployed to Vercel/Netlify`,
+      },
+      'TypeScript': {
+        title: 'TypeScript Advanced Types Challenge',
+        description: `Create a type-safe API client library:
+
+1. Design a generic HTTP client with proper TypeScript types
+2. Implement request/response interceptors with type safety
+3. Create type-safe query builders for REST endpoints
+4. Add compile-time validation for API schemas
+5. Implement proper error handling with discriminated unions
+
+Requirements:
+- Use advanced TypeScript features (conditional types, mapped types, template literals)
+- Provide full IntelliSense support
+- Handle all edge cases with proper type narrowing
+- Include comprehensive type tests
+
+Deliverables:
+- NPM-ready package
+- API documentation
+- Example usage with different scenarios`,
+      },
+      'Node.js': {
+        title: 'Node.js Microservice Architecture',
+        description: `Build a scalable microservice system:
+
+1. Create 3 microservices (Auth, Users, Orders) with RESTful APIs
+2. Implement inter-service communication (REST + message queue)
+3. Add database integration (PostgreSQL) with migrations
+4. Implement JWT authentication and authorization
+5. Add logging, monitoring, and error handling
+
+Requirements:
+- Use Express.js or Fastify
+- Docker containerization for each service
+- Redis for caching and sessions
+- RabbitMQ or Kafka for async messaging
+- Proper API documentation (OpenAPI/Swagger)
+
+Deliverables:
+- Docker Compose setup for local development
+- API documentation
+- Postman collection for testing`,
+      },
+      'System Design': {
+        title: 'Design a Scalable URL Shortener',
+        description: `Design and implement a URL shortening service:
+
+1. System Design:
+   - Handle 1000 writes/sec and 10000 reads/sec
+   - Design database schema (SQL or NoSQL)
+   - Plan caching strategy
+   - Design for high availability
+
+2. Implementation:
+   - Build REST API with rate limiting
+   - Implement custom short URL generation algorithm
+   - Add analytics tracking (click counts, referrers)
+   - Handle concurrent requests safely
+
+3. Bonus:
+   - QR code generation
+   - Custom alias support
+   - Link expiration
+
+Deliverables:
+- Architecture diagram
+- Working implementation
+- Load testing results`,
+      },
+      'Python': {
+        title: 'Python Data Processing Pipeline',
+        description: `Build a data processing pipeline:
+
+1. Create ETL pipeline to process large CSV files (1M+ rows)
+2. Implement data validation and cleaning
+3. Add transformations (aggregations, joins, filtering)
+4. Store results in PostgreSQL database
+5. Create REST API to query processed data
+
+Requirements:
+- Use Pandas for data processing
+- FastAPI for the REST API
+- SQLAlchemy for database ORM
+- Add proper error handling and logging
+- Implement async processing for large files
+
+Deliverables:
+- Pipeline code with documentation
+- API endpoints with Swagger docs
+- Sample data and test cases`,
+      },
+      'DevOps': {
+        title: 'CI/CD Pipeline Implementation',
+        description: `Set up a complete CI/CD pipeline:
+
+1. Create GitHub Actions workflow for:
+   - Automated testing
+   - Code quality checks (linting, security scanning)
+   - Docker image building
+   - Deployment to staging/production
+
+2. Infrastructure as Code:
+   - Terraform scripts for AWS infrastructure
+   - Kubernetes manifests for container orchestration
+   - Helm charts for application deployment
+
+3. Monitoring & Logging:
+   - Prometheus metrics
+   - Grafana dashboards
+   - Centralized logging (ELK stack)
+
+Deliverables:
+- Complete workflow files
+- Infrastructure code
+- Documentation for setup and usage`,
+      },
+    };
+
+    const selectedAssessment = assessments[assessmentTopic] || {
+      title: `${assessmentTopic} Technical Challenge`,
+      description: `Create a comprehensive technical challenge focusing on ${assessmentTopic}.
+
+Requirements:
+1. Demonstrate proficiency in ${assessmentTopic}
+2. Follow best practices and design patterns
+3. Include proper documentation
+4. Add tests and error handling
+5. Deploy a working demo
+
+Time limit: ${assessmentTimeLimit === 'no-limit' ? 'No time limit' : `${assessmentTimeLimit} hours`}
+
+Deliverables:
+- Source code in GitHub repository
+- README with setup instructions
+- Live demo (if applicable)
+- Documentation of design decisions`,
+    };
+
+    setAssessmentTitle(selectedAssessment.title);
+    setGeneratedAssessment(selectedAssessment.description);
+    setIsGeneratingAssessment(false);
+  };
+
   const handleSendAssessment = async () => {
     if (!assessmentTitle.trim() || !selectedConversation) {
       alert('Please enter an assessment title');
@@ -834,13 +1085,17 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
 
     // Save to backend
     try {
+      const fullMessage = generatedAssessment
+        ? `Assessment sent: ${assessmentTitle}\n\nTime limit: ${assessmentTimeLimit === 'no-limit' ? 'No limit' : assessmentTimeLimit + ' hours'}\n\n${generatedAssessment}`
+        : `Assessment sent: ${assessmentTitle} (Time limit: ${assessmentTimeLimit === 'no-limit' ? 'No limit' : assessmentTimeLimit + ' hours'})`;
+
       await axios.post(`${API_BASE}/notifications`, {
         candidate_id: parseInt(selectedConversation.id),
-        message: `Assessment sent: ${assessmentTitle} (Time limit: ${assessmentTimeLimit === 'no-limit' ? 'No limit' : assessmentTimeLimit + ' hours'})`,
+        message: fullMessage,
         event_type: 'assessment_sent',
         from_stage: null,
         to_stage: null,
-        is_ai_generated: false,
+        is_ai_generated: generatedAssessment ? true : false,
       });
     } catch (error) {
       console.error('Failed to save assessment to backend:', error);
@@ -848,7 +1103,9 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
 
     setShowAssessmentModal(false);
     setAssessmentTitle('');
+    setAssessmentTopic('');
     setAssessmentTimeLimit('no-limit');
+    setGeneratedAssessment('');
   };
 
   const handleSendFeedback = () => {
@@ -1246,11 +1503,16 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
         {/* Assessment Modal */}
         {showAssessmentModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-md w-full">
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl">Send Assessment</h3>
                 <button
-                  onClick={() => setShowAssessmentModal(false)}
+                  onClick={() => {
+                    setShowAssessmentModal(false);
+                    setAssessmentTitle('');
+                    setAssessmentTopic('');
+                    setGeneratedAssessment('');
+                  }}
                   className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5" />
@@ -1259,42 +1521,104 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Assessment Title</label>
-                  <input
-                    type="text"
-                    value={assessmentTitle}
-                    onChange={(e) => setAssessmentTitle(e.target.value)}
-                    placeholder="e.g., React Component Architecture Challenge"
+                  <label className="block text-sm text-gray-400 mb-2">Topic</label>
+                  <select
+                    value={assessmentTopic}
+                    onChange={(e: any) => setAssessmentTopic(e.target.value)}
                     className="w-full px-4 py-3 bg-gray-900/50 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                  />
+                  >
+                    <option value="">Select a topic...</option>
+                    <option value="React">React</option>
+                    <option value="TypeScript">TypeScript</option>
+                    <option value="Node.js">Node.js</option>
+                    <option value="Python">Python</option>
+                    <option value="System Design">System Design</option>
+                    <option value="DevOps">DevOps</option>
+                    <option value="AWS">AWS</option>
+                    <option value="Kubernetes">Kubernetes</option>
+                    <option value="Data Structures">Data Structures & Algorithms</option>
+                  </select>
                 </div>
 
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Time Limit</label>
                   <select
                     value={assessmentTimeLimit}
-                    onChange={(e) => setAssessmentTimeLimit(e.target.value)}
+                    onChange={(e: any) => setAssessmentTimeLimit(e.target.value)}
                     className="w-full px-4 py-3 bg-gray-900/50 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   >
                     <option value="no-limit">No time limit</option>
                     <option value="1">1 hour</option>
                     <option value="2">2 hours</option>
                     <option value="3">3 hours</option>
+                    <option value="4">4 hours</option>
                     <option value="24">24 hours</option>
+                    <option value="48">48 hours</option>
+                    <option value="72">72 hours (3 days)</option>
+                    <option value="168">1 week</option>
                   </select>
                 </div>
+
+                {assessmentTopic && (
+                  <button
+                    onClick={handleGenerateAssessment}
+                    disabled={isGeneratingAssessment}
+                    className="w-full px-4 py-3 bg-gradient-to-r from-blue-500/20 to-purple-500/20 hover:from-blue-500/30 hover:to-purple-500/30 border border-blue-500/30 rounded-xl transition-all flex items-center justify-center gap-2 text-blue-400 disabled:opacity-50"
+                  >
+                    {isGeneratingAssessment ? (
+                      <>
+                        <Sparkles className="w-5 h-5 animate-pulse" />
+                        Generating Assessment...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5" />
+                        Generate with AI
+                      </>
+                    )}
+                  </button>
+                )}
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Assessment Title</label>
+                  <input
+                    type="text"
+                    value={assessmentTitle}
+                    onChange={(e: any) => setAssessmentTitle(e.target.value)}
+                    placeholder="e.g., React Component Architecture Challenge"
+                    className="w-full px-4 py-3 bg-gray-900/50 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+
+                {generatedAssessment && (
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">Assessment Details (Editable)</label>
+                    <textarea
+                      value={generatedAssessment}
+                      onChange={(e: any) => setGeneratedAssessment(e.target.value)}
+                      rows={12}
+                      className="w-full px-4 py-3 bg-gray-900/50 border border-gray-800 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm font-mono"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 mt-6">
                 <button
-                  onClick={() => setShowAssessmentModal(false)}
+                  onClick={() => {
+                    setShowAssessmentModal(false);
+                    setAssessmentTitle('');
+                    setAssessmentTopic('');
+                    setGeneratedAssessment('');
+                  }}
                   className="flex-1 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-xl transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSendAssessment}
-                  className="flex-1 px-4 py-3 bg-purple-500 hover:bg-purple-600 rounded-xl transition-colors"
+                  disabled={!assessmentTitle.trim()}
+                  className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Send Assessment
                 </button>
@@ -1529,23 +1853,39 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
               </button>
             </div>
           )}
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-            <input
-              type="text"
-              placeholder={
-                activeTab === 'internal'
-                  ? 'Search coworkers...'
-                  : searchMode === 'conversations'
-                  ? 'Search conversations...'
-                  : searchMode === 'candidates'
-                  ? 'Search all candidates...'
-                  : 'Search by @username...'
-              }
-              value={searchQuery}
-              onChange={(e: any) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 bg-gray-900/60 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-            />
+          <div className="relative flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+              <input
+                type="text"
+                placeholder={
+                  activeTab === 'internal'
+                    ? 'Search coworkers...'
+                    : searchMode === 'conversations'
+                    ? 'Search conversations...'
+                    : searchMode === 'candidates'
+                    ? 'Search all candidates...'
+                    : 'Enter @username and press Enter or click Lookup'
+                }
+                value={searchQuery}
+                onChange={(e: any) => setSearchQuery(e.target.value)}
+                onKeyPress={(e: any) => {
+                  if (e.key === 'Enter' && searchMode === 'username' && searchQuery.trim()) {
+                    handleUsernameLookup(searchQuery);
+                  }
+                }}
+                className="w-full pl-12 pr-4 py-3 bg-gray-900/60 border border-gray-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+            </div>
+            {searchMode === 'username' && searchQuery.trim() && (
+              <button
+                onClick={() => handleUsernameLookup(searchQuery)}
+                className="px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all flex items-center gap-2"
+              >
+                <Search className="w-4 h-4" />
+                Lookup
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1596,9 +1936,13 @@ export function Messages({ onSelectCandidate, openConversationId, onConversation
             <div className="w-16 h-16 mb-4 rounded-full bg-gray-900/50 flex items-center justify-center">
               <MessageSquare className="w-8 h-8 text-gray-700" />
             </div>
-            <h3 className="text-lg mb-2">No conversations found</h3>
+            <h3 className="text-lg mb-2">
+              {searchError || 'No conversations found'}
+            </h3>
             <p className="text-sm text-gray-500 max-w-sm">
-              {searchQuery
+              {searchError
+                ? 'The user handle you searched for does not exist in our database'
+                : searchQuery
                 ? 'Try a different search term'
                 : `Start a conversation with ${activeTab === 'candidates' ? 'a candidate' : 'a coworker'}`}
             </p>

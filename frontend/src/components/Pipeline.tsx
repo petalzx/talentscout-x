@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronRight, ChevronDown, ChevronUp, ArrowRight, X, Send, Sparkles } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 import axios from 'axios';
+import { DEFAULT_ACTIVE_ROLES, getActiveRoleTitles } from '../config/roles';
 
 interface PipelineProps {
   onSelectCandidate: (id: string) => void;
@@ -33,53 +34,26 @@ interface PipelineData {
 // Function to organize candidates by their actual pipeline stages from the database
 // Only includes candidates who have been moved to Qualified or beyond (excludes "Discovered")
 const distributeCandidates = (candidates: any[]): PipelineData => {
-  const result: PipelineData = {
-    all: {
-      Qualified: [],
-      Screening: [],
-      'Round 1': [],
-      'Round 2': [],
-      Final: [],
-      Offer: [],
-      Rejected: [],
-    },
-    'Senior Frontend Engineer': {
-      Qualified: [],
-      Screening: [],
-      'Round 1': [],
-      'Round 2': [],
-      Final: [],
-      Offer: [],
-      Rejected: [],
-    },
-    'Backend Engineer': {
-      Qualified: [],
-      Screening: [],
-      'Round 1': [],
-      'Round 2': [],
-      Final: [],
-      Offer: [],
-      Rejected: [],
-    },
-    'ML Engineer': {
-      Qualified: [],
-      Screening: [],
-      'Round 1': [],
-      'Round 2': [],
-      Final: [],
-      Offer: [],
-      Rejected: [],
-    },
-    'DevOps Engineer': {
-      Qualified: [],
-      Screening: [],
-      'Round 1': [],
-      'Round 2': [],
-      Final: [],
-      Offer: [],
-      Rejected: [],
-    },
+  // Dynamically create pipeline structure based on active roles
+  const activeRoles = getActiveRoleTitles();
+  const emptyStages = {
+    Qualified: [],
+    Screening: [],
+    'Round 1': [],
+    'Round 2': [],
+    Final: [],
+    Offer: [],
+    Rejected: [],
   };
+
+  const result: PipelineData = {
+    all: { ...emptyStages },
+  };
+
+  // Add a pipeline structure for each active role
+  activeRoles.forEach(role => {
+    result[role] = { ...emptyStages };
+  });
 
   // Transform candidates to match pipeline format
   const transformedCandidates = candidates.map(candidate => ({
@@ -216,7 +190,7 @@ function SwipeableCard({ candidate, currentStage, onSelectCandidate, onMoveToNex
 }
 
 export function Pipeline({ onSelectCandidate }: PipelineProps) {
-  const [expandedStage, setExpandedStage] = useState<string | null>('Qualified');
+  const [expandedStages, setExpandedStages] = useState<string[]>(['Qualified']);
   const [selectedRole, setSelectedRole] = useState('all');
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [showOverview, setShowOverview] = useState(true);
@@ -265,18 +239,18 @@ export function Pipeline({ onSelectCandidate }: PipelineProps) {
         const distributedData = distributeCandidates(candidates);
         setPipelineData(distributedData);
 
-        // Create job roles menu
+        // Create job roles menu - always show all active roles from settings
+        const activeRoleTitles = getActiveRoleTitles();
         const roles = [
           { id: 'all', name: 'All Matches', count: Object.values(distributedData.all).flat().length },
         ];
 
-        Object.keys(distributedData).forEach(role => {
-          if (role !== 'all') {
-            const roleCount = Object.values(distributedData[role]).flat().length;
-            if (roleCount > 0) {
-              roles.push({ id: role, name: role, count: roleCount });
-            }
-          }
+        // Add all active roles with their counts (including 0)
+        activeRoleTitles.forEach((roleTitle) => {
+          const roleCount = distributedData[roleTitle]
+            ? Object.values(distributedData[roleTitle]).flat().length
+            : 0;
+          roles.push({ id: roleTitle, name: roleTitle, count: roleCount });
         });
 
         setJobRoles(roles);
@@ -527,12 +501,18 @@ export function Pipeline({ onSelectCandidate }: PipelineProps) {
         {Object.entries(currentPipeline).map(([stage, candidates]) => (
           <div key={stage} className="border-b border-gray-800/50">
             <button
-              onClick={() => setExpandedStage(expandedStage === stage ? null : stage)}
+              onClick={() => {
+                setExpandedStages(prev =>
+                  prev.includes(stage)
+                    ? prev.filter(s => s !== stage)
+                    : [...prev, stage]
+                );
+              }}
               className="w-full flex items-center gap-3 p-4 hover:bg-gradient-to-r hover:from-gray-900/40 hover:to-transparent transition-all"
             >
               <ChevronRight
                 className={`w-5 h-5 text-gray-500 transition-transform ${
-                  expandedStage === stage ? 'rotate-90' : ''
+                  expandedStages.includes(stage) ? 'rotate-90' : ''
                 }`}
               />
               <div className="text-left">
@@ -544,7 +524,7 @@ export function Pipeline({ onSelectCandidate }: PipelineProps) {
             </button>
 
             {/* Candidates in Stage */}
-            {expandedStage === stage && (
+            {expandedStages.includes(stage) && (
               <div className="bg-gradient-to-b from-gray-900/20 to-transparent">
                 {candidates.length === 0 ? (
                   <div className="p-8 text-center">

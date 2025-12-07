@@ -3,6 +3,7 @@ import { CandidateFeed } from './components/CandidateFeed';
 import { CandidateProfile } from './components/CandidateProfile';
 import { Pipeline } from './components/Pipeline';
 import { Messages } from './components/Messages';
+import { Settings as SettingsComponent } from './components/Settings';
 import { Search, Users, Briefcase, MessageCircle, Settings, LogOut } from 'lucide-react';
 import grokLogo from 'figma:asset/868077ec40f63747e6a75dda0a2da91f91b9a516.png';
 
@@ -41,6 +42,8 @@ export default function App() {
             onConversationOpened={() => setMessagesCandidateId(null)}
           />
         );
+      case 'settings':
+        return <SettingsComponent />;
       default:
         return <CandidateFeed onSelectCandidate={setSelectedCandidate} />;
     }
@@ -114,7 +117,17 @@ export default function App() {
 
           <div className="h-px bg-gray-800/50 my-4"></div>
 
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-gray-300 hover:bg-gray-900/60 transition-all">
+          <button
+            onClick={() => {
+              setActiveTab('settings');
+              setSelectedCandidate(null);
+            }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === 'settings'
+                ? 'bg-gradient-to-r from-blue-500/20 to-blue-500/10 text-blue-400 border border-blue-500/30'
+                : 'text-gray-400 hover:text-gray-300 hover:bg-gray-900/60'
+            }`}
+          >
             <Settings className="w-5 h-5" strokeWidth={2} />
             <span>Settings</span>
           </button>

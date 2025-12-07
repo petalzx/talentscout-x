@@ -229,10 +229,22 @@ class TalentService:
             }
         )
 
-        if not candidate or not candidate.searches:
+        if not candidate:
             return None
 
-        best_result = candidate.searches[0]
+        # Handle candidates with and without search results (manually looked up vs. searched)
+        has_search_results = candidate.searches and len(candidate.searches) > 0
+
+        if has_search_results:
+            best_result = candidate.searches[0]
+            match_score = best_result.score
+            job_title = best_result.session.jobTitle
+            reasoning = best_result.reasoning
+        else:
+            # Manually looked up candidate - use defaults
+            match_score = 50
+            job_title = "Manual Lookup"
+            reasoning = None
 
         # Use tweets from database (instant, no API call needed!)
         recent_posts = []
@@ -264,9 +276,9 @@ class TalentService:
 
         # Parse AI reasoning into insights
         insights = []
-        if best_result.reasoning:
+        if reasoning:
             # Split reasoning into bullet points if possible
-            reasoning_text = best_result.reasoning
+            reasoning_text = reasoning
             # Simple heuristic: if it contains sentences, split them
             if ". " in reasoning_text:
                 sentences = [s.strip() for s in reasoning_text.split(". ") if s.strip()]
@@ -274,15 +286,21 @@ class TalentService:
             else:
                 insights = [reasoning_text]
 
-        # If no insights, provide default based on score
+        # If no insights, provide default based on score or manual lookup
         if not insights:
-            if best_result.score >= 70:
+            if not has_search_results:
+                insights = [
+                    "Manually added candidate",
+                    "Profile retrieved from Twitter",
+                    "Awaiting formal evaluation"
+                ]
+            elif match_score >= 70:
                 insights = [
                     "Strong technical profile with relevant experience",
                     "Skills align well with job requirements",
                     "Active in technical community"
                 ]
-            elif best_result.score >= 50:
+            elif match_score >= 50:
                 insights = [
                     "Has relevant technical skills",
                     "Some experience indicators present"
@@ -298,9 +316,9 @@ class TalentService:
             bio=candidate.bio or "No bio available",
             followers=self._format_number(candidate.followers or 0),
             following=self._format_number(candidate.following or 0),
-            match=best_result.score,
+            match=match_score,
             tags=found_skills[:6] if found_skills else ["Developer"],
-            roles=[best_result.session.jobTitle],
+            roles=[job_title],
             location=None,  # Not currently stored
             website=None,   # Not currently stored
             header_image=candidate.headerImage,
@@ -393,3 +411,98 @@ class TalentService:
         except Exception as e:
             print(f"Error getting notifications: {e}")
             return []
+
+    async def lookup_and_add_user(self, username: str) -> Optional[CandidateResponse]:
+        """Lookup a Twitter user by username and add to database"""
+        try:
+            # First check if user already exists in database
+            clean_username = username.lstrip('@')
+            existing = await self.prisma.candidate.find_first(
+                where={"handle": clean_username}
+            )
+
+            if existing:
+                print(f"User @{clean_username} already exists in database")
+                # Return existing candidate
+                bio_lower = existing.bio.lower() if existing.bio else ""
+                common_skills = ["python", "javascript", "react", "node", "aws", "docker", "kubernetes", "typescript", "go", "rust"]
+                found_skills = [skill for skill in common_skills if skill in bio_lower]
+
+                # Get their best score from search results
+                best_score = 50  # default
+                best_role = "Developer"
+                search_result = await self.prisma.searchresult.find_first(
+                    where={"candidateId": existing.id},
+                    include={"session": True},
+                    order=[{"score": "desc"}]
+                )
+                if search_result:
+                    best_score = search_result.score
+                    best_role = search_result.session.jobTitle
+
+                return CandidateResponse(
+                    id=str(existing.id),
+                    name=existing.name or existing.handle,
+                    handle=f"@{existing.handle}",
+                    avatar=existing.avatar or "https://via.placeholder.com/100",
+                    bio=existing.bio or "No bio available",
+                    followers=self._format_number(existing.followers or 0),
+                    following=self._format_number(existing.following or 0),
+                    match=best_score,
+                    tags=found_skills[:4] if found_skills else ["Developer"],
+                    recent_post=existing.recentTweet or "No recent posts",
+                    roles=[best_role],
+                    pipeline_stage=existing.pipelineStage
+                )
+
+            # Lookup user on Twitter
+            twitter_user = await self.twitter_service.lookup_user_by_username(username)
+
+            if not twitter_user:
+                return None
+
+            # Get recent tweet
+            recent_tweet = await self.twitter_service.get_recent_tweet(twitter_user.id)
+
+            # Add to database
+            candidate = await self.prisma.candidate.upsert(
+                where={"handle": twitter_user.username},
+                data={
+                    "create": {
+                        "handle": twitter_user.username,
+                        "twitterId": twitter_user.id,
+                        "name": twitter_user.name,
+                        "bio": twitter_user.description,
+                        "followers": twitter_user.followers_count,
+                        "following": twitter_user.following_count,
+                        "avatar": twitter_user.profile_image_url,
+                        "headerImage": twitter_user.profile_banner_url,
+                        "recentTweet": recent_tweet
+                    },
+                    "update": {}
+                }
+            )
+
+            # Extract skills
+            bio_lower = twitter_user.description.lower() if twitter_user.description else ""
+            common_skills = ["python", "javascript", "react", "node", "aws", "docker", "kubernetes", "typescript", "go", "rust"]
+            found_skills = [skill for skill in common_skills if skill in bio_lower]
+
+            return CandidateResponse(
+                id=str(candidate.id),
+                name=twitter_user.name or twitter_user.username,
+                handle=f"@{twitter_user.username}",
+                avatar=twitter_user.profile_image_url or "https://via.placeholder.com/100",
+                bio=twitter_user.description or "No bio available",
+                followers=self._format_number(twitter_user.followers_count),
+                following=self._format_number(twitter_user.following_count),
+                match=50,  # Default score for manually looked up users
+                tags=found_skills[:4] if found_skills else ["Developer"],
+                recent_post=recent_tweet,
+                roles=["Manual Lookup"],
+                pipeline_stage=candidate.pipelineStage
+            )
+
+        except Exception as e:
+            print(f"Error in lookup_and_add_user: {e}")
+            return None

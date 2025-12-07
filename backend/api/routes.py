@@ -131,3 +131,25 @@ async def get_candidate_notifications(candidate_id: int):
     except Exception as e:
         print(f"Get notifications error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.get("/lookup/{username}", response_model=CandidateResponse)
+async def lookup_user_by_username(username: str):
+    """Lookup a Twitter user by username and add to database if found"""
+    try:
+        talent_service = TalentService()
+        await talent_service.prisma.connect()
+
+        candidate = await talent_service.lookup_and_add_user(username)
+
+        await talent_service.prisma.disconnect()
+
+        if not candidate:
+            raise HTTPException(status_code=404, detail=f"User @{username} not found on Twitter")
+
+        return candidate
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Lookup user error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
