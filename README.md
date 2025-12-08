@@ -1,4 +1,5 @@
 # TalentScout X MVP
+https://devpost.com/software/talentscoutx#updates - DevPost
 
 [![GitHub Repo](https://github.com/petalzx/talentscout-x)](https://github.com/petalzx/talentscout-x)
 
